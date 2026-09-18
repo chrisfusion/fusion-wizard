@@ -83,7 +83,7 @@ func ValidateDefinition(spec *wizardv1.WizardDefinitionSpec) error {
 	}
 	errs = append(errs, checkDefaults(spec.Parameters)...)
 
-	earlier := map[string]Step{} // step name -> step, only steps before the current one
+	earlier := map[string]earlierStep{} // steps before the current one, by name
 	lastOrder := -1
 	for _, st := range spec.Steps {
 		step, ok := Lookup(st.Type)
@@ -122,7 +122,7 @@ func ValidateDefinition(spec *wizardv1.WizardDefinitionSpec) error {
 		if st.ForEach != "" {
 			checkForEach(st, declared, fail)
 		}
-		earlier[st.Name] = step
+		earlier[st.Name] = earlierStep{Step: step, forEach: st.ForEach != ""}
 	}
 	return errors.Join(errs...)
 }
@@ -167,8 +167,14 @@ func checkForEach(st wizardv1.WizardStep, declared map[string]wizardv1.WizardPar
 	}
 }
 
+// earlierStep is a step that runs before the one being validated.
+type earlierStep struct {
+	Step
+	forEach bool
+}
+
 func checkRefs(value, where string, inForEach bool, declared map[string]wizardv1.WizardParameter,
-	earlier map[string]Step, fail func(string, ...any)) {
+	earlier map[string]earlierStep, fail func(string, ...any)) {
 
 	t, err := params.Parse(value)
 	if err != nil {
@@ -194,6 +200,8 @@ func checkRefs(value, where string, inForEach bool, declared map[string]wizardv1
 			switch {
 			case !ok:
 				fail("%s refers to step %q, which does not exist or does not run before it", where, r.Name)
+			case s.forEach:
+				fail("%s refers to step %q, which has forEach: it runs several times, so its outputs are ambiguous", where, r.Name)
 			case !contains(s.Outputs(), r.Key):
 				fail("%s refers to output %q, which step %q (%s) does not provide (has: %s)", where, r.Key, r.Name, s.Type(), strings.Join(s.Outputs(), ", "))
 			}

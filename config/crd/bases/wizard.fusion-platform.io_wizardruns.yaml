@@ -315,6 +315,11 @@ spec:
                         phase.
                       format: date-time
                       type: string
+                    failures:
+                      description: Failures counts consecutive transient failures;
+                        the step fails for good after too many.
+                      format: int32
+                      type: integer
                     item:
                       description: Item is the forEach item this instance was expanded
                         for.

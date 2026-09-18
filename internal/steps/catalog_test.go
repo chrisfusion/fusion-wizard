@@ -113,6 +113,10 @@ func TestValidateDefinitionRejects(t *testing.T) {
 		{"duplicate parameter", func(d *wizardv1.WizardDefinitionSpec) { d.Parameters = append(d.Parameters, d.Parameters[0]) }, "declared twice"},
 		{"duplicate step name", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[4].Name = "template" }, "used twice"},
 		{"invalid pattern", func(d *wizardv1.WizardDefinitionSpec) { d.Parameters[0].Pattern = "(" }, "invalid pattern"},
+		{"reference to a forEach step's output", func(d *wizardv1.WizardDefinitionSpec) {
+			d.Steps = append(d.Steps, wizardv1.WizardStep{Name: "after", Type: wizardv1.StepTrigger, Params: map[string]string{
+				"name": "x", "chain": "${steps.trigger.outputs.name}"}})
+		}, "outputs are ambiguous"},
 		{"default of the wrong type", func(d *wizardv1.WizardDefinitionSpec) { d.Parameters[2].Default = js(`5`) }, "invalid parameter default"},
 	}
 	for _, c := range cases {

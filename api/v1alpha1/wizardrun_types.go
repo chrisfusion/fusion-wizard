@@ -73,8 +73,17 @@ const (
 	DispositionFoundUnowned Disposition = "FoundUnowned"
 )
 
-// ConditionReady is the condition type reported on a WizardRun.
-const ConditionReady = "Ready"
+const (
+	// ConditionReady is the condition type reported on a WizardRun.
+	ConditionReady = "Ready"
+
+	// FinalizerRollback keeps a WizardRun alive until everything it provisioned was rolled back.
+	FinalizerRollback = "wizard.fusion-platform.io/rollback"
+
+	// AnnotationRetry is a one-shot request to retry a Failed run: the controller resets the failed
+	// steps and removes the annotation.
+	AnnotationRetry = "wizard.fusion-platform.io/retry"
+)
 
 // ManagedResourceRef points a run step at one upstream resource.
 type ManagedResourceRef struct {
@@ -154,6 +163,10 @@ type WizardRunStepStatus struct {
 	// Message carries the last error or progress detail.
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// Failures counts consecutive transient failures; the step fails for good after too many.
+	// +optional
+	Failures int32 `json:"failures,omitempty"`
 
 	// Outputs are values later steps can reference as ${steps.<name>.outputs.<key>}.
 	// +optional
