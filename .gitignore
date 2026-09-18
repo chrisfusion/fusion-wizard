@@ -1,0 +1,82 @@
+# Build artifacts
+/manager
+/api-server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+dist/
+
+# Go module cache and vendor
+vendor/
+
+# IDE — VS Code
+.vscode/
+*.code-workspace
+
+# IDE — JetBrains (GoLand, IntelliJ, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE — Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+Session.vim
+
+# IDE — Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Credentials and secrets
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.cer
+*.env
+.env.*
+!.env.example
+secrets/
+credentials/
+kubeconfig
+*.kubeconfig
+
+# OS-generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V7
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Helm
+*.tgz
+charts/
+
+# Temporary files
+*.tmp
+*.log
+tmp/
+temp/
+
+# Claude Code (local)
+.claude/
+.claude.local.md
