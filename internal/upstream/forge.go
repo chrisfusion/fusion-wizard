@@ -62,6 +62,7 @@ type Build struct {
 	IndexArtifactVersion *string   `json:"indexArtifactVersion"`
 	CIBuildName          *string   `json:"ciBuildName"`
 	RepoURL              *string   `json:"repoUrl,omitempty"`
+	ProjectDir           *string   `json:"projectDir,omitempty"`
 	CreatedAt            time.Time `json:"createdAt"`
 }
 

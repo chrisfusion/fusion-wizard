@@ -247,23 +247,33 @@ func ResolveMap(m map[string]string, c Context) (map[string]string, error) {
 	return out, errors.Join(errs...)
 }
 
-// ResolveList resolves a forEach source. It must be exactly one ${params.<name>} placeholder
-// (no filters, no surrounding text) that refers to a stringList parameter.
-func ResolveList(s string, c Context) ([]string, error) {
+// ListRef checks that s has the shape of a forEach source: exactly one ${params.<name>}
+// placeholder, no filters, no surrounding text. It returns the parameter name. Definition
+// validation and ResolveList share it, so what validates is exactly what later resolves.
+func ListRef(s string) (string, error) {
 	t, err := Parse(s)
+	if err != nil {
+		return "", err
+	}
+	if len(t.segments) != 1 || t.segments[0].ref == nil || t.segments[0].ref.Kind != RefParams || len(t.segments[0].ref.Filters) > 0 {
+		return "", fmt.Errorf("forEach %q must be a single ${params.<name>} reference to a stringList parameter", s)
+	}
+	return t.segments[0].ref.Name, nil
+}
+
+// ResolveList resolves a forEach source (see ListRef) to the list parameter's items.
+func ResolveList(s string, c Context) ([]string, error) {
+	name, err := ListRef(s)
 	if err != nil {
 		return nil, err
 	}
-	if len(t.segments) != 1 || t.segments[0].ref == nil || t.segments[0].ref.Kind != RefParams || len(t.segments[0].ref.Filters) > 0 {
-		return nil, fmt.Errorf("forEach %q must be a single ${params.<name>} reference to a stringList parameter", s)
-	}
-	v, err := lookup(*t.segments[0].ref, c)
+	v, err := lookup(Ref{Kind: RefParams, Name: name, Raw: "params." + name}, c)
 	if err != nil {
 		return nil, err
 	}
 	list, ok := v.([]string)
 	if !ok {
-		return nil, fmt.Errorf("forEach %q: parameter %q is not a stringList", s, t.segments[0].ref.Name)
+		return nil, fmt.Errorf("forEach %q: parameter %q is not a stringList", s, name)
 	}
 	return list, nil
 }
