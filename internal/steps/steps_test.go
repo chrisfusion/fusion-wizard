@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"fusion-platform.io/fusion-wizard/internal/ledger"
+	"fusion-platform.io/fusion-wizard/internal/steps/stepstest"
 	"fusion-platform.io/fusion-wizard/internal/upstream"
 
 	wizardv1 "fusion-platform.io/fusion-wizard/api/v1alpha1"
@@ -32,10 +33,10 @@ func TestIsPermanent(t *testing.T) {
 	}{
 		{"explicit", permanentf("bad input"), true},
 		{"wrapped explicit", errors.Join(errors.New("x"), permanentf("bad")), true},
-		{"http 404", apiErr(404), true},
-		{"http 422", apiErr(422), true},
-		{"http 503", apiErr(503), false},
-		{"http 429", apiErr(429), false},
+		{"http 404", stepstest.APIErr(404), true},
+		{"http 422", stepstest.APIErr(422), true},
+		{"http 503", stepstest.APIErr(503), false},
+		{"http 429", stepstest.APIErr(429), false},
 		{"no response", &upstream.APIError{Status: 0}, false},
 		{"unclassified", errors.New("boom"), false},
 	}
@@ -64,7 +65,7 @@ func TestGitWatcherCreateAdoptAndConflict(t *testing.T) {
 	if res.Resources[0].Disposition != wizardv1.DispositionAdopted {
 		t.Errorf("second run must adopt, got %v", res.Resources[0].Disposition)
 	}
-	if n := r.log.count("create forge/gitwatcher/"); n != 1 {
+	if n := r.log.Count("create forge/gitwatcher/"); n != 1 {
 		t.Errorf("forge watcher created %d times, want 1", n)
 	}
 	r.mustDone(t, wizardv1.StepGitWatcher, "run-b", "watcher", gwParams("nightly", repoURL)) // resume: idempotent
@@ -91,7 +92,7 @@ func TestGitWatcherCreateAdoptAndConflict(t *testing.T) {
 
 func TestFoundUnownedResourceIsNeverDeleted(t *testing.T) {
 	r := newRig(t)
-	r.forge.watchers["hand-made"] = &upstream.GitWatcher{Name: "hand-made", Spec: upstream.GitWatcherSpec{RepoURL: repoURL, BuildType: "app"}}
+	r.forge.Watchers["hand-made"] = &upstream.GitWatcher{Name: "hand-made", Spec: upstream.GitWatcherSpec{RepoURL: repoURL, BuildType: "app"}}
 
 	res := r.mustDone(t, wizardv1.StepGitWatcher, "run-a", "watcher", gwParams("hand-made", repoURL))
 	if res.Resources[0].Disposition != wizardv1.DispositionFoundUnowned {
@@ -100,14 +101,14 @@ func TestFoundUnownedResourceIsNeverDeleted(t *testing.T) {
 	if e := r.entry(t, wizardv1.ServiceForge, KindGitWatcher, "hand-made"); e.Spec.Managed {
 		t.Error("a resource found without a ledger entry must be recorded unmanaged")
 	}
-	if n := r.log.count("create forge/gitwatcher/"); n != 0 {
+	if n := r.log.Count("create forge/gitwatcher/"); n != 0 {
 		t.Errorf("nothing should have been created, got %d", n)
 	}
 
 	if err := r.env.Rollback(context.Background(), "run-a"); err != nil {
 		t.Fatal(err)
 	}
-	if n := r.log.count("delete forge/"); n != 0 {
+	if n := r.log.Count("delete forge/"); n != 0 {
 		t.Error("rollback deleted a resource the wizard did not create")
 	}
 	if e := r.entry(t, wizardv1.ServiceForge, KindGitWatcher, "hand-made"); e != nil {
@@ -115,7 +116,7 @@ func TestFoundUnownedResourceIsNeverDeleted(t *testing.T) {
 	}
 
 	// A hand-made watcher for a different repo is a conflict.
-	r.forge.watchers["other"] = &upstream.GitWatcher{Name: "other", Spec: upstream.GitWatcherSpec{RepoURL: "https://x/y.git", BuildType: "app"}}
+	r.forge.Watchers["other"] = &upstream.GitWatcher{Name: "other", Spec: upstream.GitWatcherSpec{RepoURL: "https://x/y.git", BuildType: "app"}}
 	if _, err := r.ensure(t, wizardv1.StepGitWatcher, "run-a", "watcher", gwParams("other", repoURL)); !IsPermanent(err) {
 		t.Errorf("mismatching hand-made watcher: err = %v", err)
 	}
@@ -127,7 +128,7 @@ func newWaitRig(t *testing.T) *rig {
 	t.Helper()
 	r := newRig(t)
 	for _, n := range []string{"wa", "wb"} {
-		r.forge.watchers[n] = &upstream.GitWatcher{Name: n, Spec: upstream.GitWatcherSpec{RepoURL: repoURL, BuildType: "app"}, Status: upstream.GitWatcherStatus{Phase: "Active"}}
+		r.forge.Watchers[n] = &upstream.GitWatcher{Name: n, Spec: upstream.GitWatcherSpec{RepoURL: repoURL, BuildType: "app"}, Status: upstream.GitWatcherStatus{Phase: "Active"}}
 	}
 	return r
 }
@@ -158,21 +159,21 @@ func (r *rig) wait(t *testing.T, in Input) (Result, error) {
 
 func TestWaitBuildPollingToSuccess(t *testing.T) {
 	r := newWaitRig(t)
-	r.index.addArtifact(42, "app.nightly", "1.0.0")
+	r.index.AddArtifact(42, "app.nightly", "1.0.0")
 
 	res, err := r.wait(t, Input{})
 	if err != nil || res.Done || res.Requeue != r.env.Cfg.PollInterval || !strings.Contains(res.Message, "start a build") {
 		t.Fatalf("no build yet: %+v, %v", res, err)
 	}
 
-	r.forge.setBuild(build(1, "BUILDING"))
+	r.forge.SetBuild(build(1, "BUILDING"))
 	res, err = r.wait(t, Input{})
 	if err != nil || res.Done || res.Outputs["buildId"] != "1" || !strings.Contains(res.Message, "BUILDING") {
 		t.Fatalf("building: %+v, %v", res, err)
 	}
 	prior := res.Outputs // the reconciler persists these between polls
 
-	r.forge.setBuild(succeeded(1))
+	r.forge.SetBuild(succeeded(1))
 	res, err = r.wait(t, Input{Prior: prior})
 	if err != nil || !res.Done {
 		t.Fatalf("success: %+v, %v", res, err)
@@ -194,19 +195,19 @@ func TestWaitBuildPollingToSuccess(t *testing.T) {
 
 func TestWaitBuildFailures(t *testing.T) {
 	r := newWaitRig(t)
-	r.index.addArtifact(42, "app.nightly", "1.0.0")
+	r.index.AddArtifact(42, "app.nightly", "1.0.0")
 
-	r.forge.setBuild(build(1, "FAILED"))
+	r.forge.SetBuild(build(1, "FAILED"))
 	if _, err := r.wait(t, Input{}); !IsPermanent(err) || !strings.Contains(err.Error(), "failed") {
 		t.Errorf("failed build: %v", err)
 	}
 
-	r.forge.setBuild(build(1, "BUILDING"))
-	r.forge.setWatcherStatus("wa", upstream.GitWatcherStatus{Phase: "Disabled", ConsecutiveFailures: 2, LastError: "pip exploded"})
+	r.forge.SetBuild(build(1, "BUILDING"))
+	r.forge.SetWatcherStatus("wa", upstream.GitWatcherStatus{Phase: "Disabled", ConsecutiveFailures: 2, LastError: "pip exploded"})
 	if _, err := r.wait(t, Input{}); !IsPermanent(err) || !strings.Contains(err.Error(), "disabled") || !strings.Contains(err.Error(), "pip exploded") {
 		t.Errorf("disabled watcher: %v", err)
 	}
-	r.forge.setWatcherStatus("wa", upstream.GitWatcherStatus{Phase: "Active"})
+	r.forge.SetWatcherStatus("wa", upstream.GitWatcherStatus{Phase: "Active"})
 
 	if res, err := r.wait(t, Input{StartedAt: r.now.Add(-9 * time.Minute)}); err != nil || res.Done {
 		t.Errorf("9 min into a 10 min budget must still wait: %+v %v", res, err)
@@ -216,14 +217,14 @@ func TestWaitBuildFailures(t *testing.T) {
 	}
 
 	noArtifact := build(1, "SUCCESS")
-	r.forge.setBuild(noArtifact)
+	r.forge.SetBuild(noArtifact)
 	if _, err := r.wait(t, Input{}); !IsPermanent(err) || !strings.Contains(err.Error(), "no index artifact") {
 		t.Errorf("success without artifact: %v", err)
 	}
 
 	// Forge skips a version it built before, even if the artifact was deleted since.
-	delete(r.index.artifacts, "app.nightly")
-	r.forge.setBuild(succeeded(1))
+	delete(r.index.Artifacts, "app.nightly")
+	r.forge.SetBuild(succeeded(1))
 	if _, err := r.wait(t, Input{}); !IsPermanent(err) || !strings.Contains(err.Error(), "no longer exists") {
 		t.Errorf("artifact gone from the index: %v", err)
 	}
@@ -231,22 +232,22 @@ func TestWaitBuildFailures(t *testing.T) {
 
 func TestWaitBuildFindsTheRightBuild(t *testing.T) {
 	r := newWaitRig(t)
-	r.index.addArtifact(42, "app.nightly", "1.0.0")
+	r.index.AddArtifact(42, "app.nightly", "1.0.0")
 
 	// A newer build of ANOTHER repository, and one of ours in another subfolder, must be ignored.
 	other := build(9, "BUILDING")
 	x := "https://git.example/other.git"
 	other.RepoURL = &x
-	r.forge.setBuild(other)
+	r.forge.SetBuild(other)
 	sub := build(8, "BUILDING")
 	dir := "subdir"
 	sub.ProjectDir = &dir
-	r.forge.setBuild(sub)
+	r.forge.SetBuild(sub)
 	if res, err := r.wait(t, Input{}); err != nil || res.Done || res.Outputs != nil {
 		t.Fatalf("foreign builds must not match: %+v, %v", res, err)
 	}
 
-	r.forge.setBuild(succeeded(3))
+	r.forge.SetBuild(succeeded(3))
 	// Forge deleted the row the step remembered (it does this when it retries a failed build):
 	// fall back to discovery instead of failing.
 	res, err := r.wait(t, Input{Prior: map[string]string{"buildId": "99"}})
@@ -257,8 +258,8 @@ func TestWaitBuildFindsTheRightBuild(t *testing.T) {
 
 func TestWaitBuildSharedArtifactRollback(t *testing.T) {
 	r := newWaitRig(t)
-	r.index.addArtifact(42, "app.nightly", "1.0.0")
-	r.forge.setBuild(succeeded(1))
+	r.index.AddArtifact(42, "app.nightly", "1.0.0")
+	r.forge.SetBuild(succeeded(1))
 
 	resA, err := r.wait(t, Input{Run: "run-a", Key: "build", Params: map[string]string{"watcher": "wa"}})
 	if err != nil || !resA.Done {
@@ -273,14 +274,14 @@ func TestWaitBuildSharedArtifactRollback(t *testing.T) {
 	if err := r.env.Rollback(ctx, "run-a"); err != nil {
 		t.Fatal(err)
 	}
-	if r.log.count("delete index/artifact/") != 0 {
+	if r.log.Count("delete index/artifact/") != 0 {
 		t.Fatal("the artifact is still used by run-b and must survive run-a's rollback")
 	}
 	if err := r.env.Rollback(ctx, "run-b"); err != nil {
 		t.Fatal(err)
 	}
-	if r.log.count("delete index/artifact/42") != 1 {
-		t.Errorf("events: %v", r.log.snapshot())
+	if r.log.Count("delete index/artifact/42") != 1 {
+		t.Errorf("events: %v", r.log.Snapshot())
 	}
 }
 
@@ -292,7 +293,7 @@ func tagParams(version string) map[string]string {
 
 func TestTagCreateAdoptAndRollback(t *testing.T) {
 	r := newRig(t)
-	r.index.addArtifact(42, "app.nightly", "1.0.0", "1.1.0")
+	r.index.AddArtifact(42, "app.nightly", "1.0.0", "1.1.0")
 
 	res := r.mustDone(t, wizardv1.StepTag, "run-a", "tag", tagParams("1.0.0"))
 	if res.Outputs["tag"] != "stable" || res.Resources[0].Disposition != wizardv1.DispositionCreated {
@@ -307,24 +308,24 @@ func TestTagCreateAdoptAndRollback(t *testing.T) {
 	if res.Resources[0].Disposition != wizardv1.DispositionAdopted {
 		t.Errorf("second run disposition = %v", res.Resources[0].Disposition)
 	}
-	if r.log.indexOf("settag index/42/stable=1.1.0") < 0 {
-		t.Errorf("the adopted tag must be re-pointed: %v", r.log.snapshot())
+	if r.log.IndexOf("settag index/42/stable=1.1.0") < 0 {
+		t.Errorf("the adopted tag must be re-pointed: %v", r.log.Snapshot())
 	}
 
 	ctx := context.Background()
 	_ = r.env.Rollback(ctx, "run-a")
-	if r.log.count("delete index/tag/") != 0 {
+	if r.log.Count("delete index/tag/") != 0 {
 		t.Fatal("shared tag deleted while run-b still uses it")
 	}
 	_ = r.env.Rollback(ctx, "run-b")
-	if r.log.count("delete index/tag/42/stable") != 1 {
-		t.Errorf("events: %v", r.log.snapshot())
+	if r.log.Count("delete index/tag/42/stable") != 1 {
+		t.Errorf("events: %v", r.log.Snapshot())
 	}
 }
 
 func TestTagFoundUnownedAndErrors(t *testing.T) {
 	r := newRig(t)
-	r.index.addArtifact(42, "app.nightly", "1.0.0")
+	r.index.AddArtifact(42, "app.nightly", "1.0.0")
 	if err := r.index.SetTag(context.Background(), 42, "stable", "1.0.0"); err != nil { // someone else's tag
 		t.Fatal(err)
 	}
@@ -334,7 +335,7 @@ func TestTagFoundUnownedAndErrors(t *testing.T) {
 		t.Errorf("disposition = %v", res.Resources[0].Disposition)
 	}
 	_ = r.env.Rollback(context.Background(), "run-a")
-	if r.log.count("delete index/tag/") != 0 {
+	if r.log.Count("delete index/tag/") != 0 {
 		t.Error("a tag the wizard did not create must survive rollback")
 	}
 
@@ -364,7 +365,7 @@ func TestJobTemplateSpecAndSharing(t *testing.T) {
 	r := newRig(t)
 	r.mustDone(t, wizardv1.StepJobTemplate, "run-a", "template", tplParams("app.nightly"))
 
-	spec := r.weave.objs["jobtemplates/tpl"]["spec"].(map[string]any)
+	spec := r.weave.Objs["jobtemplates/tpl"]["spec"].(map[string]any)
 	if spec["image"] != "registry.example/runner:1.0.0" {
 		t.Errorf("image must default to the instance runner image, got %v", spec["image"])
 	}
@@ -382,8 +383,8 @@ func TestJobTemplateSpecAndSharing(t *testing.T) {
 	r.env.Cfg.DefaultResources = corev1.ResourceRequirements{}
 	r.env.Cfg.RunnerImage = "registry.example/runner:2.0.0"
 	res := r.mustDone(t, wizardv1.StepJobTemplate, "run-b", "template", tplParams("app.nightly"))
-	if res.Resources[0].Disposition != wizardv1.DispositionAdopted || r.log.count("create weave/jobtemplates/") != 1 {
-		t.Errorf("run-b must adopt: %+v (events %v)", res.Resources, r.log.snapshot())
+	if res.Resources[0].Disposition != wizardv1.DispositionAdopted || r.log.Count("create weave/jobtemplates/") != 1 {
+		t.Errorf("run-b must adopt: %+v (events %v)", res.Resources, r.log.Snapshot())
 	}
 
 	if _, err := r.ensure(t, wizardv1.StepJobTemplate, "run-c", "template", tplParams("app.other")); !IsPermanent(err) {
@@ -394,7 +395,7 @@ func TestJobTemplateSpecAndSharing(t *testing.T) {
 	p["name"] = "tpl2"
 	p["image"] = "custom:1"
 	r.mustDone(t, wizardv1.StepJobTemplate, "run-a", "template2", p)
-	if got := r.weave.objs["jobtemplates/tpl2"]["spec"].(map[string]any)["image"]; got != "custom:1" {
+	if got := r.weave.Objs["jobtemplates/tpl2"]["spec"].(map[string]any)["image"]; got != "custom:1" {
 		t.Errorf("explicit image param ignored: %v", got)
 	}
 }
@@ -405,14 +406,14 @@ func TestChainSpecAndConflict(t *testing.T) {
 	r := newRig(t)
 	r.mustDone(t, wizardv1.StepChain, "run-a", "chain", map[string]string{"name": "ch", "jobTemplate": "tpl"})
 
-	steps := r.weave.objs["chains/ch"]["spec"].(map[string]any)["steps"].([]any)
+	steps := r.weave.Objs["chains/ch"]["spec"].(map[string]any)["steps"].([]any)
 	st := steps[0].(map[string]any)
 	if len(steps) != 1 || st["name"] != "run" || st["stepKind"] != "Job" || st["jobTemplateRef"].(map[string]any)["name"] != "tpl" {
 		t.Errorf("chain steps = %v", steps)
 	}
 
 	r.mustDone(t, wizardv1.StepChain, "run-a", "chain2", map[string]string{"name": "ch2", "jobTemplate": "tpl", "stepName": "main"})
-	if got := r.weave.objs["chains/ch2"]["spec"].(map[string]any)["steps"].([]any)[0].(map[string]any)["name"]; got != "main" {
+	if got := r.weave.Objs["chains/ch2"]["spec"].(map[string]any)["steps"].([]any)[0].(map[string]any)["name"]; got != "main" {
 		t.Errorf("stepName param ignored: %v", got)
 	}
 
@@ -421,12 +422,12 @@ func TestChainSpecAndConflict(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	// A hand-made chain that runs the template is accepted as unowned; one that does not is a conflict.
-	r.weave.seed("chains", "mine", map[string]any{"steps": []any{map[string]any{"name": "x", "jobTemplateRef": map[string]any{"name": "tpl"}}}})
+	r.weave.Seed("chains", "mine", map[string]any{"steps": []any{map[string]any{"name": "x", "jobTemplateRef": map[string]any{"name": "tpl"}}}})
 	res := r.mustDone(t, wizardv1.StepChain, "run-a", "chain3", map[string]string{"name": "mine", "jobTemplate": "tpl"})
 	if res.Resources[0].Disposition != wizardv1.DispositionFoundUnowned {
 		t.Errorf("disposition = %v", res.Resources[0].Disposition)
 	}
-	r.weave.seed("chains", "theirs", map[string]any{"steps": []any{}})
+	r.weave.Seed("chains", "theirs", map[string]any{"steps": []any{}})
 	if _, err := r.ensure(t, wizardv1.StepChain, "run-a", "chain4", map[string]string{"name": "theirs", "jobTemplate": "tpl"}); !IsPermanent(err) {
 		t.Errorf("err = %v", err)
 	}
@@ -440,7 +441,7 @@ func TestTriggerSpecs(t *testing.T) {
 	r.mustDone(t, wizardv1.StepTrigger, "run-a", "trigger/main.py", map[string]string{
 		"name": "nightly-main", "chain": "ch", "override.ENTRYPOINT": "main.py", "override.ALPHA": "1",
 	})
-	spec := r.weave.objs["triggers/nightly-main"]["spec"].(map[string]any)
+	spec := r.weave.Objs["triggers/nightly-main"]["spec"].(map[string]any)
 	if spec["type"] != "OnDemand" || spec["chainRef"].(map[string]any)["name"] != "ch" {
 		t.Errorf("spec = %v", spec)
 	}
@@ -455,7 +456,7 @@ func TestTriggerSpecs(t *testing.T) {
 	r.mustDone(t, wizardv1.StepTrigger, "run-a", "trigger/cron", map[string]string{
 		"name": "cron-t", "chain": "ch", "type": "Cron", "schedule": "0 */5 * * * *",
 	})
-	if s := r.weave.objs["triggers/cron-t"]["spec"].(map[string]any); s["type"] != "Cron" || s["schedule"] != "0 */5 * * * *" {
+	if s := r.weave.Objs["triggers/cron-t"]["spec"].(map[string]any); s["type"] != "Cron" || s["schedule"] != "0 */5 * * * *" {
 		t.Errorf("cron spec = %v", s)
 	}
 
@@ -469,7 +470,7 @@ func TestTriggerSpecs(t *testing.T) {
 			t.Errorf("%v: want a permanent validation error, got %v", p, err)
 		}
 	}
-	if r.weave.has("triggers", "t") {
+	if r.weave.Has("triggers", "t") {
 		t.Error("an invalid trigger must not be created")
 	}
 }
@@ -519,7 +520,7 @@ func TestEnsureWaitsWhileAPreviousOwnerIsDeleting(t *testing.T) {
 	if err != nil || res.Done || res.Requeue != retryTerminating || !strings.Contains(res.Message, "previous owner") {
 		t.Fatalf("a terminating resource is a wait, not an error: %+v, %v", res, err)
 	}
-	if r.log.count("create weave/chains/") != 1 {
+	if r.log.Count("create weave/chains/") != 1 {
 		t.Error("run-b must not create anything while the old resource is being deleted")
 	}
 
@@ -527,13 +528,13 @@ func TestEnsureWaitsWhileAPreviousOwnerIsDeleting(t *testing.T) {
 	if err := r.env.SweepTerminating(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if r.weave.has("chains", "ch") || r.entry(t, wizardv1.ServiceWeave, KindChain, "ch") != nil {
+	if r.weave.Has("chains", "ch") || r.entry(t, wizardv1.ServiceWeave, KindChain, "ch") != nil {
 		t.Fatal("the sweep must delete the resource and its ledger entry")
 	}
 	// ... and then run-b creates a fresh one.
 	r.mustDone(t, wizardv1.StepChain, "run-b", "chain", p)
-	if r.log.count("create weave/chains/") != 2 {
-		t.Errorf("events: %v", r.log.snapshot())
+	if r.log.Count("create weave/chains/") != 2 {
+		t.Errorf("events: %v", r.log.Snapshot())
 	}
 }
 
@@ -543,9 +544,9 @@ func TestTransientCreateFailureIsRecoverableAndRollbackSafe(t *testing.T) {
 	p := map[string]string{"name": "ch", "jobTemplate": "tpl"}
 
 	failing := true
-	r.weave.createHook = func(_ *fakeWeave, _ string, _ upstream.WeaveObject) error {
+	r.weave.CreateHook = func(_ *stepstest.Weave, _ string, _ upstream.WeaveObject) error {
 		if failing {
-			return apiErr(503)
+			return stepstest.APIErr(503)
 		}
 		return nil
 	}
@@ -555,7 +556,7 @@ func TestTransientCreateFailureIsRecoverableAndRollbackSafe(t *testing.T) {
 	}
 	// Write-ahead: the ledger already knows about the resource that was never created.
 	e := r.entry(t, wizardv1.ServiceWeave, KindChain, "ch")
-	if e == nil || !e.Spec.Managed || len(e.Spec.Refs) != 1 || r.weave.has("chains", "ch") {
+	if e == nil || !e.Spec.Managed || len(e.Spec.Refs) != 1 || r.weave.Has("chains", "ch") {
 		t.Fatalf("expected a managed entry with no upstream resource, got %+v", e)
 	}
 
@@ -570,7 +571,7 @@ func TestTransientCreateFailureIsRecoverableAndRollbackSafe(t *testing.T) {
 	// Retrying after the outage works and reports the run as the creator.
 	failing = false
 	res := r.mustDone(t, wizardv1.StepChain, "run-a", "chain", p)
-	if res.Resources[0].Disposition != wizardv1.DispositionCreated || !r.weave.has("chains", "ch") {
+	if res.Resources[0].Disposition != wizardv1.DispositionCreated || !r.weave.Has("chains", "ch") {
 		t.Errorf("retry: %+v", res.Resources)
 	}
 }
@@ -581,9 +582,9 @@ func TestCreateRaceIsResolvedByAdopting(t *testing.T) {
 
 	// Between our Get (absent) and our Create, somebody else creates the same chain: the create
 	// answers 409. The step must re-check and adopt instead of failing.
-	r.weave.createHook = func(w *fakeWeave, collection string, obj upstream.WeaveObject) error {
-		w.objs[collection+"/ch"] = obj
-		return apiErr(409)
+	r.weave.CreateHook = func(w *stepstest.Weave, collection string, obj upstream.WeaveObject) error {
+		w.Objs[collection+"/ch"] = obj
+		return stepstest.APIErr(409)
 	}
 	res := r.mustDone(t, wizardv1.StepChain, "run-a", "chain", p)
 	if len(res.Resources) != 1 {
@@ -596,8 +597,8 @@ func TestCreateRaceIsResolvedByAdopting(t *testing.T) {
 
 func TestRollbackOrderDeletesWatcherBeforeArtifact(t *testing.T) {
 	r := newRig(t) // no pre-seeded watchers: the step must create (and so own) the watcher
-	r.index.addArtifact(42, "app.nightly", "1.0.0")
-	r.forge.setBuild(succeeded(1))
+	r.index.AddArtifact(42, "app.nightly", "1.0.0")
+	r.forge.SetBuild(succeeded(1))
 
 	r.mustDone(t, wizardv1.StepGitWatcher, "run-a", "watcher", gwParams("wa", repoURL))
 	if _, err := r.wait(t, Input{Run: "run-a", Key: "build", Params: map[string]string{"watcher": "wa"}}); err != nil {
@@ -620,7 +621,7 @@ func TestRollbackOrderDeletesWatcherBeforeArtifact(t *testing.T) {
 		"delete index/artifact/42",
 	}
 	var got []string
-	for _, e := range r.log.snapshot() {
+	for _, e := range r.log.Snapshot() {
 		if strings.HasPrefix(e, "delete ") {
 			got = append(got, e)
 		}

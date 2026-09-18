@@ -34,7 +34,7 @@ func TestConcurrentRunsShareOneResource(t *testing.T) {
 	}
 	wg.Wait()
 
-	if n := r.log.count("create weave/chains/shared-chain"); n != 1 {
+	if n := r.log.Count("create weave/chains/shared-chain"); n != 1 {
 		t.Fatalf("shared chain created %d times, want exactly 1", n)
 	}
 	if e := r.entry(t, wizardv1.ServiceWeave, KindChain, "shared-chain"); e == nil || len(e.Spec.Refs) != runs {
@@ -52,8 +52,8 @@ func TestConcurrentRunsShareOneResource(t *testing.T) {
 	}
 	wg.Wait()
 
-	if n := r.log.count("delete weave/chains/shared-chain"); n != 1 {
-		t.Errorf("shared chain deleted %d times, want exactly 1 (events %v)", n, r.log.snapshot())
+	if n := r.log.Count("delete weave/chains/shared-chain"); n != 1 {
+		t.Errorf("shared chain deleted %d times, want exactly 1 (events %v)", n, r.log.Snapshot())
 	}
 	if entries, _ := r.led.List(ctx); len(entries) != 0 {
 		t.Errorf("ledger not empty after every run rolled back: %d entries", len(entries))
@@ -66,8 +66,8 @@ func TestConcurrentRunsShareOneResource(t *testing.T) {
 func TestSharedPipelineRollback(t *testing.T) {
 	r := newRig(t)
 	ctx := context.Background()
-	r.index.addArtifact(42, "app.nightly", "1.0.0")
-	r.forge.setBuild(succeeded(1))
+	r.index.AddArtifact(42, "app.nightly", "1.0.0")
+	r.forge.SetBuild(succeeded(1))
 
 	provision := func(run, watcher, trigger, entrypoint string) {
 		t.Helper()
@@ -90,40 +90,40 @@ func TestSharedPipelineRollback(t *testing.T) {
 	}
 	// Only what run-a exclusively owned is gone.
 	for _, gone := range [][2]string{{"triggers", "trigger-a"}} {
-		if r.weave.has(gone[0], gone[1]) {
+		if r.weave.Has(gone[0], gone[1]) {
 			t.Errorf("%s/%s should be deleted", gone[0], gone[1])
 		}
 	}
-	if _, ok := r.forge.watchers["watch-a"]; ok {
+	if _, ok := r.forge.Watchers["watch-a"]; ok {
 		t.Error("run-a's watcher should be deleted")
 	}
 	for _, kept := range [][2]string{{"triggers", "trigger-b"}, {"chains", "shared-chain"}, {"jobtemplates", "shared-tpl"}} {
-		if !r.weave.has(kept[0], kept[1]) {
+		if !r.weave.Has(kept[0], kept[1]) {
 			t.Errorf("%s/%s is still used by run-b and must survive", kept[0], kept[1])
 		}
 	}
-	if _, ok := r.forge.watchers["watch-b"]; !ok {
+	if _, ok := r.forge.Watchers["watch-b"]; !ok {
 		t.Error("run-b's watcher must survive")
 	}
-	if _, ok := r.index.artifacts["app.nightly"]; !ok {
+	if _, ok := r.index.Artifacts["app.nightly"]; !ok {
 		t.Error("the artifact is shared and must survive")
 	}
-	if r.log.count("delete index/") != 0 {
-		t.Errorf("no index deletion expected yet: %v", r.log.snapshot())
+	if r.log.Count("delete index/") != 0 {
+		t.Errorf("no index deletion expected yet: %v", r.log.Snapshot())
 	}
 
 	if err := r.env.Rollback(ctx, "run-b"); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.weave.objs) != 0 || len(r.forge.watchers) != 0 || len(r.index.artifacts) != 0 {
-		t.Errorf("everything must be gone: weave=%d forge=%d index=%d", len(r.weave.objs), len(r.forge.watchers), len(r.index.artifacts))
+	if len(r.weave.Objs) != 0 || len(r.forge.Watchers) != 0 || len(r.index.Artifacts) != 0 {
+		t.Errorf("everything must be gone: weave=%d forge=%d index=%d", len(r.weave.Objs), len(r.forge.Watchers), len(r.index.Artifacts))
 	}
 	if entries, _ := r.led.List(ctx); len(entries) != 0 {
 		t.Errorf("ledger must be empty, has %d entries", len(entries))
 	}
 	// Each shared resource was deleted exactly once, by the last run.
 	for _, ev := range []string{"delete weave/chains/shared-chain", "delete weave/jobtemplates/shared-tpl", "delete index/artifact/42", "delete index/tag/42/stable"} {
-		if n := r.log.count(ev); n != 1 {
+		if n := r.log.Count(ev); n != 1 {
 			t.Errorf("%q happened %d times, want 1", ev, n)
 		}
 	}
