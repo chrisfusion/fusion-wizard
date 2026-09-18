@@ -15,3 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `internal/steps`: step catalogue (`gitWatcher`, `waitBuild`, `tag`, `jobTemplate`, `chain`, `trigger`) with idempotent write-ahead `Ensure`, visible conflicts for same-name-different-settings, unowned resources never deleted, and `ValidateDefinition` (catalogue order, unknown params, references to earlier steps only)
 - `Env.Rollback(run)` releases every ledger entry a run references in kind order (trigger, chain, template, watcher, tag, artifact) and `Env.SweepTerminating` finishes deletions a crash interrupted
 - `upstream.Build.ProjectDir` so `waitBuild` can match a build to its watcher by repository and subfolder
+- `internal/controller`: `WizardRun` reconciler (finalizer, definition snapshot, ordered step execution with `forEach` expansion, non-blocking polling, exponential backoff for transient failures with a give-up limit, one-shot `wizard.fusion-platform.io/retry` annotation, rollback via `desiredState: RolledBack` or deletion, retried until it succeeds) and a leader-only `Sweeper` for interrupted ledger deletions
+- `cmd/main.go`: operator entrypoint (namespaced cache, leader election, health probes, one projected token source per upstream)
+- `internal/steps/stepstest`: shared in-memory fakes of forge, index and weave with an ordered event log
+- `WizardRunStepStatus.failures` counter; `FinalizerRollback` and `AnnotationRetry` constants
+
+### Changed
+- `ValidateDefinition` rejects references to the outputs of a `forEach` step (several instances make them ambiguous)
+

@@ -21,6 +21,7 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - Undo order is NOT blind reverse: by resource kind (`undoRank`, `internal/steps/rollback.go`): trigger, chain, template, **watcher**, tag, artifact — delete the watcher before the artifact or forge rebuilds it.
 - Rollback is driven by the LEDGER (`Env.Rollback(run)` finds every entry referencing the run), never by run status: a step that failed midway holds a ref but is not in status. `SweepTerminating` finishes deletions a crash interrupted.
 - `ensure()` is write-ahead: ledger entry first, upstream create second. A step's identity = the settings that define it (template: artifact+tag; NOT image/resources, which are instance defaults).
+- Reconciler (`internal/controller`): one status `Patch` per reconcile, skipped when nothing changed (no write loops); the update predicate ignores status-only changes, polling is `RequeueAfter`; the retry annotation is removed only AFTER the reset status was written; a rolled-back run is terminal (create a new run).
 - Operator calls upstreams (SA token re-read per request); api-server only reads/writes CRs. Identity (creator self-delete, privileged bulk delete) is deferred; API stamps `createdBy` from `X-User-ID` only for allowlisted BFF SAs.
 
 ## Gotchas
@@ -28,6 +29,8 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - printcolumn JSONPath has no `length()`; list-map keys (`name`, `key`) must be required fields
 - `go mod tidy` prunes deps nothing imports yet — re-run after adding code
 - Ledger writes use `conflictBackoff` (30 steps), not `retry.DefaultRetry` (5): shared entries are contended by design and the default failed a 25-writer test
+- Controller/steps tests share `internal/steps/stepstest` fakes; the controller harness injects an `EnvFactory` (`staticEnv`). The fake client needs `WithStatusSubresource(&WizardRun{})` and does not maintain `metadata.generation`
+- `forEach` keys are `<step>/<item>` (`etl/load.py` -> key `trigger/etl/load.py`; `stem` keeps directories, so trigger names come out `<job>-etl-load`)
 - Tests that call `Ensure` need a rig with NO pre-seeded upstream objects if they expect the wizard to own (and delete) them — pre-seeded ones are correctly treated as unowned
 - Weave specs are generic `map[string]any` (no import of fusion-weave types); `waitBuild` matches builds by repoUrl+projectDir because forge clears `lastBuildName` on success
 - `config/rbac/` and chart RBAC templates are hand-maintained pairs
