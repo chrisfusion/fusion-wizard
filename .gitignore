@@ -13,6 +13,12 @@ dist/
 
 # Go module cache and vendor
 vendor/
+go.work
+go.work.sum
+
+# Go test coverage
+*.coverprofile
+cover.html
 
 # IDE — VS Code
 .vscode/
