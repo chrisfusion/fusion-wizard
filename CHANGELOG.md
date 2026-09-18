@@ -22,4 +22,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 - `ValidateDefinition` rejects references to the outputs of a `forEach` step (several instances make them ambiguous)
+- `internal/apiserver` and `cmd/api`: REST API (`/api/v1`) with definitions (parameter schema, validity flag), runs (create with up-front validation of definition, parameters and forEach expansion; get, list with filters, retry, rollback, delete, bulk rollback with a required selector and a target cap) and a read-only ledger view; `{"error", "details"}` error shape; `slog` logging with request IDs
+- API authentication: Kubernetes TokenReview, mandatory `AUTH_ALLOWED_SA` allowlist (startup refuses an open API unless `ALLOW_UNAUTHENTICATED=true`), optional audience; `X-User-ID` / `X-User-Email` are read only from allowlisted callers, validated, and stamped on the run
+- `internal/plan` (definition expansion shared by the API and the reconciler) and `internal/envutil` (env-driven flag defaults shared by both binaries)
+- `stepstest.PythonJob`: one shared reference definition for the steps, controller and API tests
 

@@ -22,6 +22,7 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - Rollback is driven by the LEDGER (`Env.Rollback(run)` finds every entry referencing the run), never by run status: a step that failed midway holds a ref but is not in status. `SweepTerminating` finishes deletions a crash interrupted.
 - `ensure()` is write-ahead: ledger entry first, upstream create second. A step's identity = the settings that define it (template: artifact+tag; NOT image/resources, which are instance defaults).
 - Reconciler (`internal/controller`): one status `Patch` per reconcile, skipped when nothing changed (no write loops); the update predicate ignores status-only changes, polling is `RequeueAfter`; the retry annotation is removed only AFTER the reset status was written; a rolled-back run is terminal (create a new run).
+- API (`internal/apiserver`): validates on create what the reconciler would validate later (definition, parameters, `plan.Expand`) so clients get every problem as one 422 with `details`; errors are `{"error","details"}` (spectra reads `body.error`); refuses to start without `AUTH_ALLOWED_SA` (no "any service account" mode); user headers are read only after the caller passed the allowlist; bulk rollback requires a selector and caps targets at 200.
 - Operator calls upstreams (SA token re-read per request); api-server only reads/writes CRs. Identity (creator self-delete, privileged bulk delete) is deferred; API stamps `createdBy` from `X-User-ID` only for allowlisted BFF SAs.
 
 ## Gotchas
@@ -31,6 +32,8 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - Ledger writes use `conflictBackoff` (30 steps), not `retry.DefaultRetry` (5): shared entries are contended by design and the default failed a 25-writer test
 - Controller/steps tests share `internal/steps/stepstest` fakes; the controller harness injects an `EnvFactory` (`staticEnv`). The fake client needs `WithStatusSubresource(&WizardRun{})` and does not maintain `metadata.generation`
 - `forEach` keys are `<step>/<item>` (`etl/load.py` -> key `trigger/etl/load.py`; `stem` keeps directories, so trigger names come out `<job>-etl-load`)
+- Mutation-check safety tests from a FRESH copy of the tree each time (a helper that restores only the mutated file lets earlier mutations leak into later runs)
+- Docker check: `docker build` with the local daemon (not minikube's), run both binaries with `--help`, then `docker rmi`
 - Tests that call `Ensure` need a rig with NO pre-seeded upstream objects if they expect the wizard to own (and delete) them — pre-seeded ones are correctly treated as unowned
 - Weave specs are generic `map[string]any` (no import of fusion-weave types); `waitBuild` matches builds by repoUrl+projectDir because forge clears `lastBuildName` on success
 - `config/rbac/` and chart RBAC templates are hand-maintained pairs
