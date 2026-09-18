@@ -90,28 +90,8 @@ func newHarness(t *testing.T) *harness {
 
 func js(raw string) apiextensionsv1.JSON { return apiextensionsv1.JSON{Raw: []byte(raw)} }
 
-// pythonDefinition is spectra's "Git Python job" wizard in catalogue form.
-func pythonDefinition() wizardv1.WizardDefinitionSpec {
-	return wizardv1.WizardDefinitionSpec{
-		Parameters: []wizardv1.WizardParameter{
-			{Name: "jobName", Required: true},
-			{Name: "repoUrl", Required: true},
-			{Name: "entrypoints", Type: wizardv1.ParameterStringList, Required: true},
-		},
-		Steps: []wizardv1.WizardStep{
-			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{"name": "${params.jobName}", "repoUrl": "${params.repoUrl}"}},
-			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
-			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
-				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",
-				"version": "${steps.build.outputs.version}", "tag": "${config.tagName}"}},
-			{Name: "template", Type: wizardv1.StepJobTemplate, Params: map[string]string{
-				"name": "${params.jobName}", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}", "image": "${config.runnerImage}"}},
-			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}"}},
-			{Name: "trigger", Type: wizardv1.StepTrigger, ForEach: "${params.entrypoints}", Params: map[string]string{
-				"name": "${params.jobName|k8sName}-${item|stem|k8sName}", "chain": "${steps.chain.outputs.name}", "override.ENTRYPOINT": "${item}"}},
-		},
-	}
-}
+// pythonDefinition is the shared reference definition (see stepstest.PythonJob).
+func pythonDefinition() wizardv1.WizardDefinitionSpec { return *stepstest.PythonJob() }
 
 func (h *harness) createDefinition(name string, spec wizardv1.WizardDefinitionSpec) {
 	h.t.Helper()

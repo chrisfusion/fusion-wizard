@@ -20,6 +20,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"fusion-platform.io/fusion-wizard/internal/controller"
+	"fusion-platform.io/fusion-wizard/internal/envutil"
 	"fusion-platform.io/fusion-wizard/internal/ledger"
 	"fusion-platform.io/fusion-wizard/internal/upstream"
 
@@ -44,8 +45,8 @@ func main() {
 	)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "address the metrics endpoint binds to")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "address the health probe endpoint binds to")
-	flag.StringVar(&namespace, "namespace", envOr("NAMESPACE", "fusion"), "the only namespace this operator watches")
-	flag.StringVar(&configMap, "config-map", envOr("INSTANCE_CONFIG_MAP", "fusion-wizard-config"), "ConfigMap holding the per-instance settings")
+	flag.StringVar(&namespace, "namespace", envutil.String("NAMESPACE", "fusion"), "the only namespace this operator watches")
+	flag.StringVar(&configMap, "config-map", envutil.String("INSTANCE_CONFIG_MAP", "fusion-wizard-config"), "ConfigMap holding the per-instance settings")
 	flag.BoolVar(&leaderElect, "leader-elect", false, "enable leader election (needed with more than one replica)")
 	flag.DurationVar(&sweepInterval, "sweep-interval", time.Minute, "how often interrupted ledger deletions are finished")
 	opts := zap.Options{Development: false}
@@ -102,11 +103,4 @@ func main() {
 		setupLog.Error(err, "manager exited with an error")
 		os.Exit(1)
 	}
-}
-
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }

@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"fusion-platform.io/fusion-wizard/internal/params"
+	"fusion-platform.io/fusion-wizard/internal/plan"
 	"fusion-platform.io/fusion-wizard/internal/steps"
 	"fusion-platform.io/fusion-wizard/internal/upstream"
 
@@ -131,7 +132,7 @@ func (r *WizardRunReconciler) reconcileApply(ctx context.Context, run *wizardv1.
 			r.setRun(st, wizardv1.RunFailed, "invalid parameters: "+err.Error(), run.Generation)
 		})
 	}
-	insts, err := expand(def, values)
+	insts, err := plan.Expand(def, values)
 	if err != nil {
 		return ctrl.Result{}, r.updateStatus(ctx, run, func(st *wizardv1.WizardRunStatus) {
 			r.setRun(st, wizardv1.RunFailed, err.Error(), run.Generation)
@@ -193,7 +194,7 @@ const (
 
 // advance runs step instances in order for as long as they complete, mutating run.Status only.
 // It stops at the first instance that must wait or has failed: later steps depend on earlier ones.
-func (r *WizardRunReconciler) advance(ctx context.Context, run *wizardv1.WizardRun, insts []instance,
+func (r *WizardRunReconciler) advance(ctx context.Context, run *wizardv1.WizardRun, insts []plan.Instance,
 	values map[string]any, retry bool) ctrl.Result {
 
 	st := &run.Status
@@ -255,7 +256,7 @@ func (r *WizardRunReconciler) advance(ctx context.Context, run *wizardv1.WizardR
 }
 
 // runInstance executes one step instance and records the result in s.
-func (r *WizardRunReconciler) runInstance(ctx context.Context, env *steps.Env, run *wizardv1.WizardRun, in instance,
+func (r *WizardRunReconciler) runInstance(ctx context.Context, env *steps.Env, run *wizardv1.WizardRun, in plan.Instance,
 	s *wizardv1.WizardRunStepStatus, values map[string]any, outputs map[string]map[string]string) (outcome, time.Duration) {
 
 	log := ctrl.LoggerFrom(ctx).WithValues("step", in.Key, "type", in.Step.Type)
@@ -426,7 +427,7 @@ func (r *WizardRunReconciler) setRun(st *wizardv1.WizardRunStatus, phase wizardv
 
 // syncSteps makes status.steps list exactly the planned instances, in order, keeping the progress
 // already recorded. Rollback works from the ledger, so dropping an entry never loses ownership.
-func syncSteps(st *wizardv1.WizardRunStatus, insts []instance) {
+func syncSteps(st *wizardv1.WizardRunStatus, insts []plan.Instance) {
 	known := make(map[string]wizardv1.WizardRunStepStatus, len(st.Steps))
 	for _, s := range st.Steps {
 		known[s.Key] = s

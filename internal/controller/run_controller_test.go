@@ -543,38 +543,6 @@ func TestTwoRunsShareResourcesAndRollBackIndependently(t *testing.T) {
 
 // ---- pure helpers ----
 
-func TestExpand(t *testing.T) {
-	def := pythonDefinition()
-	insts, err := expand(&def, map[string]any{"jobName": "n", "repoUrl": "u", "entrypoints": []string{"a.py", "b/c.py"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var keys []string
-	for _, in := range insts {
-		keys = append(keys, in.Key)
-	}
-	want := "watcher build tag template chain trigger/a.py trigger/b/c.py"
-	if got := strings.Join(keys, " "); got != want {
-		t.Errorf("keys = %s, want %s", got, want)
-	}
-	if insts[5].Item == nil || *insts[5].Item != "a.py" || insts[0].Item != nil {
-		t.Error("only forEach instances carry an item")
-	}
-
-	insts, err = expand(&def, map[string]any{"entrypoints": []string{}})
-	if err != nil || len(insts) != 5 {
-		t.Errorf("an empty forEach list yields no instances: %d, %v", len(insts), err)
-	}
-	for _, bad := range [][]string{{"a", "a"}, {""}} {
-		if _, err := expand(&def, map[string]any{"entrypoints": bad}); err == nil {
-			t.Errorf("entrypoints %q must be rejected", bad)
-		}
-	}
-	if _, err := expand(&def, map[string]any{}); err == nil {
-		t.Error("a missing list parameter must be an error")
-	}
-}
-
 func TestRetryDelay(t *testing.T) {
 	want := map[int32]time.Duration{1: 2 * time.Second, 2: 4 * time.Second, 5: 32 * time.Second, 6: time.Minute, 50: time.Minute}
 	for n, d := range want {
