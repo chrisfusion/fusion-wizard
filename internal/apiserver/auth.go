@@ -44,11 +44,13 @@ func (a *TokenReviewAuthenticator) Authenticate(ctx context.Context, token strin
 		return nil, err
 	}
 	if !tr.Status.Authenticated {
+		LoggerFromCtx(ctx).Warn("token review: not authenticated", "error", tr.Status.Error, "audiences_requested", a.Audiences)
 		return nil, nil
 	}
 	// Only service accounts are accepted: "system:serviceaccount:<namespace>:<name>".
 	parts := strings.Split(tr.Status.User.Username, ":")
 	if len(parts) != 4 || parts[0] != "system" || parts[1] != "serviceaccount" || parts[2] == "" || parts[3] == "" {
+		LoggerFromCtx(ctx).Warn("token review: unexpected username format", "username", tr.Status.User.Username)
 		return nil, nil
 	}
 	return &Principal{Namespace: parts[2], Name: parts[3]}, nil

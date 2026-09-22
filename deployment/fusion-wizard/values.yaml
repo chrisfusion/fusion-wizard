@@ -73,7 +73,11 @@ api:
     # REQUIRED unless allowUnauthenticated: the service accounts that may call the API, as
     # "<namespace>/<name>" (the BFFs, e.g. fusion/fusion-bff). There is no "any account" mode.
     allowedServiceAccounts: []
-    # Audience the caller's token must be valid for (optional).
+    # Audience the caller's token must be valid for. Only truly optional when the caller sends its
+    # pod's default automounted token (audience = the apiserver's own default). Leaving this empty
+    # while the caller sends a CUSTOM-audience token (e.g. fusion-bff's shared upstream token, minted
+    # for audience "fusion-bff") makes every call fail TokenReview with a bare 401 "invalid token" and
+    # no server-side clue why — see CLAUDE.md Gotchas. Set this to that token's audience in that case.
     audience: ""
     # Skips authentication entirely. Local development only.
     allowUnauthenticated: false

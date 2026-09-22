@@ -27,6 +27,17 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - Every upstream resource the wizard creates is stamped `fusion-platform.io/managed-by: wizard` (platform-wide, open-valued — other components may use their own value, e.g. a future "manual" default) and `wizard.fusion-platform.io/run: <run-name>` (scoped, since weave already uses the unscoped `fusion-platform.io/run` for a different concept). Lets a raw `kubectl get -o yaml` answer "is this wizard-managed" without the ledger API — for warning a user before they hand-edit a chain or similar. `internal/ledger.LabelManagedBy`/`LabelRun`; applied in `weavesteps.go`'s `stampOwnerLabels` (jobTemplate/chain/trigger — one shared call site) and threaded to forge via `CreateGitWatcherRequest.Labels` (forge's `POST /api/v1/gitwatchers` accepts it as of 2026-09-22; its `PUT` never touches `ObjectMeta`, so labels survive updates).
 
 ## Gotchas
+- `api.auth.audience` (`AUTH_AUDIENCE`) is NOT optional in practice despite the values.yaml comment: an
+  empty value makes `TokenReviewAuthenticator` omit `spec.audiences`, and Kubernetes then validates the
+  caller's token against the **apiserver's own default audience** (`https://kubernetes.default.svc...`),
+  not "any audience". fusion-bff's default upstream token (`saToken`, shared with forge/index/content) is
+  minted for the custom audience `fusion-bff` (`fusion-bff/deployment/templates/deployment.yaml`'s
+  `sa-token` projected volume) — with `AUTH_AUDIENCE` unset, every call from that token fails with
+  `invalid token` (401) and Kubernetes' real reason only surfaces via a debug log line (`internal/apiserver/auth.go`'s `Authenticate`, added 2026-09-22:
+  logs `tr.Status.Error` on rejection) — the plain 401 response body gives no clue. Confirmed
+  experimentally (toggled `AUTH_AUDIENCE` empty vs `fusion-bff` against the same live token): set
+  `api.auth.audience=fusion-bff` (or whatever the calling BFF's token audience is) whenever the caller
+  uses a custom-audience token rather than its pod's default automounted one.
 - Every status field `+optional`, else use `Status().Update()` (required-field `Patch` deadlock, see fusion-flux CLAUDE.md); finalizers via `Patch`, never `Update`
 - printcolumn JSONPath has no `length()`; list-map keys (`name`, `key`) must be required fields
 - `go mod tidy` prunes deps nothing imports yet — re-run after adding code
