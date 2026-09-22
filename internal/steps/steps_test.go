@@ -379,6 +379,10 @@ func TestJobTemplateSpecAndSharing(t *testing.T) {
 	if cs["artifactName"] != "app.nightly" || cs["tag"] != "stable" {
 		t.Errorf("codeSource = %v", cs)
 	}
+	labels := r.weave.Objs["jobtemplates/tpl"]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if labels[ledger.LabelManagedBy] != ledger.ManagedByWizard || labels[ledger.LabelRun] != "run-a" {
+		t.Errorf("owner labels = %v", labels)
+	}
 	limits := spec["resources"].(map[string]any)["limits"].(map[string]any)
 	if limits["memory"] != "1Gi" {
 		t.Errorf("default resources not applied: %v", spec["resources"])

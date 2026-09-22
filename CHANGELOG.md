@@ -28,6 +28,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `stepstest.PythonJob`: one shared reference definition for the steps, controller and API tests
 - Helm chart `deployment/fusion-wizard` (v0.1.0): operator and API deployments, RBAC scoped to the chart, instance ConfigMap, preseeded `python-git-job` `WizardDefinition`, and synced `crds/`; `internal/chart` contract-tests the rendered manifests against the code (mutation-checked)
 
+### Added
+- Every chain, jobTemplate and trigger the wizard creates in weave is stamped with `fusion-platform.io/managed-by: wizard` and `wizard.fusion-platform.io/run: <run-name>`, so a bare `kubectl get -o yaml` shows ownership without querying the wizard's own ledger API. `managed-by` is a platform-wide, open-valued label (other components may use their own value); `run` stays scoped under `wizard.fusion-platform.io/` because weave already uses the unscoped `fusion-platform.io/run` for a different concept (a chain execution). `internal/upstream.CreateGitWatcherRequest` gained a `Labels` field to carry the same pair to forge; forge's `POST /api/v1/gitwatchers` accepts it as of the same date.
+
 ### Fixed
 - `waitBuild` no longer fails a run permanently when forge reports a build `SUCCESS` but its index artifact is missing (e.g. deleted by our own rollback): forge's `GitWatcher` reconciler now self-heals this case on its own (see fusion-forge's `index-drift-cleanup`), just not synchronously with our poll, so `waitBuild` retries up to `BuildTimeout` instead of giving up immediately. Verified end-to-end against a real forge/index in minikube.
 

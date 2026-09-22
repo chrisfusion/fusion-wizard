@@ -49,6 +49,11 @@ type CreateGitWatcherRequest struct {
 	RepoRef    string `json:"repo_ref,omitempty"`
 	BuildType  string `json:"build_type"`
 	ProjectDir string `json:"project_dir,omitempty"`
+
+	// Labels are stamped on the created GitWatcher's ObjectMeta, so a bare `kubectl get -o yaml`
+	// shows ownership without querying the wizard's own ledger API. Forge must be able to accept
+	// this field for it to take effect (see fusion-forge's own CLAUDE.md/CHANGELOG).
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Build is a forge build row (app, git or venv build).

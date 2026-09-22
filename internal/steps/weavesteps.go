@@ -44,10 +44,25 @@ func (e *Env) weaveResource(ctx context.Context, in Input, kind, name, hash stri
 			return &existing{Matches: diff == "", Detail: diff}, nil
 		},
 		Create: func(ctx context.Context) (string, error) {
+			stampOwnerLabels(obj, in.Run)
 			_, err := e.Weave.Create(ctx, collection, obj)
 			return "", err
 		},
 	}, outputs)
+}
+
+// stampOwnerLabels marks a generic upstream object as wizard-managed, so a bare `kubectl get -o
+// yaml` shows ownership without querying the wizard's own ledger API.
+func stampOwnerLabels(obj upstream.WeaveObject, run string) {
+	meta, _ := obj["metadata"].(map[string]any)
+	if meta == nil {
+		meta = map[string]any{}
+		obj["metadata"] = meta
+	}
+	meta["labels"] = map[string]any{
+		ledger.LabelManagedBy: ledger.ManagedByWizard,
+		ledger.LabelRun:       run,
+	}
 }
 
 // ---- jobTemplate ----

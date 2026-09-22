@@ -59,6 +59,7 @@ func (gitWatcherStep) Ensure(ctx context.Context, env *Env, in Input) (Result, e
 		Create: func(ctx context.Context) (string, error) {
 			_, err := env.Forge.CreateGitWatcher(ctx, upstream.CreateGitWatcherRequest{
 				Name: name, RepoURL: repoURL, RepoRef: repoRef, BuildType: "app", ProjectDir: projectDir,
+				Labels: map[string]string{ledger.LabelManagedBy: ledger.ManagedByWizard, ledger.LabelRun: in.Run},
 			})
 			return "", err
 		},

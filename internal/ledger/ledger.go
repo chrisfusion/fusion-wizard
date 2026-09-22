@@ -36,6 +36,17 @@ const (
 	LabelService = "wizard.fusion-platform.io/service"
 	LabelKind    = "wizard.fusion-platform.io/kind"
 
+	// LabelManagedBy and LabelRun are stamped on every upstream resource the wizard creates
+	// (chains, jobTemplates, triggers, GitWatchers — not the ledger entries above), so a bare
+	// `kubectl get -o yaml` shows ownership without querying the wizard's API. LabelManagedBy is a
+	// platform-wide, open-valued convention ("wizard" here; other components may use their own
+	// value, e.g. a future "manual" default); LabelRun stays scoped under wizard.fusion-platform.io/
+	// because weave already uses the unscoped "fusion-platform.io/run" for a different concept (a
+	// chain execution, not a WizardRun).
+	LabelManagedBy  = "fusion-platform.io/managed-by"
+	ManagedByWizard = "wizard"
+	LabelRun        = "wizard.fusion-platform.io/run"
+
 	maxBaseLen = 54 // 54 + "-" + 8 hex = 63, so the name is also usable as a label value
 )
 
