@@ -1,0 +1,126 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+  name: wizardresources.wizard.fusion-platform.io
+spec:
+  group: wizard.fusion-platform.io
+  names:
+    kind: WizardResource
+    listKind: WizardResourceList
+    plural: wizardresources
+    shortNames:
+    - wres
+    singular: wizardresource
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.service
+      name: Service
+      type: string
+    - jsonPath: .spec.kind
+      name: Kind
+      type: string
+    - jsonPath: .spec.name
+      name: Resource
+      type: string
+    - jsonPath: .spec.managed
+      name: Managed
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: WizardResource is a ledger entry tracking one upstream resource
+          created or adopted by wizard runs.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              WizardResourceSpec is one ledger entry: an upstream resource plus every run step that uses it.
+              The ledger is the source of truth for rollback — a managed resource is deleted upstream only
+              when its last reference is removed.
+            properties:
+              externalID:
+                description: ExternalID is the upstream's numeric or opaque ID when
+                  the name is not enough.
+                type: string
+              kind:
+                description: Kind is the upstream resource kind, e.g. "gitwatcher",
+                  "artifact", "jobtemplate".
+                type: string
+              managed:
+                description: |-
+                  Managed is false for resources found without a ledger entry (e.g. created by hand);
+                  they are tracked for visibility but never deleted by a rollback.
+                type: boolean
+              name:
+                description: Name is the resource name at the upstream.
+                type: string
+              refs:
+                description: Refs lists every run step currently using the resource.
+                items:
+                  description: ResourceReference is one run step holding a reference
+                    to a managed resource.
+                  properties:
+                    run:
+                      description: Run is the WizardRun name.
+                      type: string
+                    step:
+                      description: Step is the WizardRunStepStatus key within that
+                        run.
+                      type: string
+                  required:
+                  - run
+                  - step
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
+              service:
+                description: Service is the upstream that owns the resource.
+                enum:
+                - forge
+                - index
+                - weave
+                type: string
+              specHash:
+                description: |-
+                  SpecHash identifies the content the resource was created with. A run that wants the
+                  same name with a different hash fails with a conflict instead of silently reusing it.
+                type: string
+              terminating:
+                description: |-
+                  Terminating is set (with a resourceVersion-guarded update) by the run that removed the last
+                  reference, before it deletes the resource upstream. Other runs must not adopt an entry in
+                  this state; they wait until it is gone and then create the resource afresh.
+                type: boolean
+            required:
+            - kind
+            - managed
+            - name
+            - service
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

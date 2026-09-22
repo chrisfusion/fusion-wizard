@@ -1,0 +1,104 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# The operator and the API server ship in one image; the API deployment overrides the entrypoint.
+image:
+  repository: fusion-wizard
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# ---- per-instance settings (rendered into the <release>-config ConfigMap) -----------------------
+# Everything that differs between instances lives here or under `upstreams`, never in a
+# WizardDefinition. The operator re-reads the ConfigMap on every reconcile.
+config:
+  # REQUIRED: image the job templates run (the platform's runner image), e.g. fusion-runner-python312:1.2.0
+  runnerImage: ""
+  # Default resources for the job templates the wizard creates. Empty = built-in defaults
+  # (requests 250m/256Mi, limits 1/1Gi). A value here REPLACES the defaults, it is not merged.
+  defaultResources: {}
+  tagName: stable        # index tag pointed at the built version
+  artifactPrefix: "app." # forge publishes app builds as app.<name>
+  chainStepName: run
+  pollInterval: 5s       # how often a run polls forge while waiting for a build
+  buildTimeout: 10m      # how long a run waits for a build before failing
+
+# ---- upstream services -------------------------------------------------------------------------
+# url empty = the service's usual in-cluster address in the release namespace.
+# auth.enabled projects a service-account token for that upstream (harmless when the upstream has
+# auth disabled); audience must match the upstream's AUTH_AUDIENCE when it sets one (weave: none).
+upstreams:
+  forge:
+    url: ""
+    auth: {enabled: true, audience: ""}
+  index:
+    url: ""
+    auth: {enabled: true, audience: ""}
+  weave:
+    url: ""
+    auth: {enabled: true, audience: ""}
+
+# ---- operator ----------------------------------------------------------------------------------
+operator:
+  replicaCount: 1
+  leaderElection:
+    enabled: false          # turn on with more than one replica
+  sweepInterval: 1m         # how often interrupted ledger deletions are finished
+  # Weave's REST API allows DELETE only for role "admin", and rolling a run back deletes weave
+  # resources. The role is read from this label on the operator's ServiceAccount (weave looks the
+  # account up by name in its own namespace).
+  weaveRole: admin
+  ports: {metrics: 8080, health: 8081}
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile: {type: RuntimeDefault}
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+
+# ---- API server --------------------------------------------------------------------------------
+api:
+  enabled: true
+  replicaCount: 1
+  port: 8083
+  service:
+    type: ClusterIP
+    port: 8083
+  auth:
+    # REQUIRED unless allowUnauthenticated: the service accounts that may call the API, as
+    # "<namespace>/<name>" (the BFFs, e.g. fusion/fusion-bff). There is no "any account" mode.
+    allowedServiceAccounts: []
+    # Audience the caller's token must be valid for (optional).
+    audience: ""
+    # Skips authentication entirely. Local development only.
+    allowUnauthenticated: false
+  log: {level: info, format: json}
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 250m, memory: 128Mi}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile: {type: RuntimeDefault}
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+  # Usually not needed: the BFFs reach the API through its Service.
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+
+# ---- preseeded wizard definitions --------------------------------------------------------------
+definitions:
+  pythonGitJob:
+    enabled: true

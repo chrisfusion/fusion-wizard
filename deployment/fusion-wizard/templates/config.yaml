@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Per-instance settings the operator reads on every reconcile (see internal/instancecfg).
+{{- $c := .Values.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fusion-wizard.configName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+data:
+  runnerImage: {{ required "config.runnerImage is required: the image the job templates run" $c.runnerImage | quote }}
+  tagName: {{ $c.tagName | quote }}
+  artifactPrefix: {{ $c.artifactPrefix | quote }}
+  chainStepName: {{ $c.chainStepName | quote }}
+  pollInterval: {{ $c.pollInterval | quote }}
+  buildTimeout: {{ $c.buildTimeout | quote }}
+  forgeURL: {{ include "fusion-wizard.upstreamURL" (list . .Values.upstreams.forge "fusion-forge" 8080) | quote }}
+  indexURL: {{ include "fusion-wizard.upstreamURL" (list . .Values.upstreams.index "fusion-index-backend" 8080) | quote }}
+  weaveURL: {{ include "fusion-wizard.upstreamURL" (list . .Values.upstreams.weave "fusion-weave-api" 8082) | quote }}
+  {{- if $c.defaultResources }}
+  defaultResources: |
+    {{- toYaml $c.defaultResources | nindent 4 }}
+  {{- end }}

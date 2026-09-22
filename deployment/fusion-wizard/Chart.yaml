@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+apiVersion: v2
+name: fusion-wizard
+description: Kubernetes-native backend that orchestrates multi-service provisioning (forge, index, weave) with persistent, rollback-able wizard runs
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - kubernetes
+  - operator
+  - wizard
+  - provisioning
+maintainers:
+  - name: chrisfusion

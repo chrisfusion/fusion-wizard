@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+{{- $op := .Values.operator }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: operator
+spec:
+  replicas: {{ $op.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fusion-wizard.operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fusion-wizard.operator.selectorLabels" . | nindent 8 }}
+        {{- with $op.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $op.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-operator
+      {{- with $op.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- $volumes := include "fusion-wizard.tokenVolumes" . }}
+      {{- if $volumes }}
+      volumes:
+        {{- $volumes | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: manager
+          image: {{ include "fusion-wizard.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/manager"]
+          args:
+            - --namespace={{ .Release.Namespace }}
+            - --config-map={{ include "fusion-wizard.configName" . }}
+            - --metrics-bind-address=:{{ $op.ports.metrics }}
+            - --health-probe-bind-address=:{{ $op.ports.health }}
+            - --sweep-interval={{ $op.sweepInterval }}
+            {{- if $op.leaderElection.enabled }}
+            - --leader-elect
+            {{- end }}
+          {{- $env := include "fusion-wizard.tokenEnv" . }}
+          {{- if $env }}
+          env:
+            {{- $env | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ $op.ports.metrics }}
+            - name: health
+              containerPort: {{ $op.ports.health }}
+          livenessProbe:
+            httpGet: {path: /healthz, port: health}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: {path: /readyz, port: health}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- $mounts := include "fusion-wizard.tokenMounts" . }}
+          {{- if $mounts }}
+          volumeMounts:
+            {{- $mounts | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml $op.resources | nindent 12 }}
+          {{- with $op.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

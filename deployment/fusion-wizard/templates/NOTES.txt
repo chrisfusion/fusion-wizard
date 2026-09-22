@@ -1,0 +1,13 @@
+fusion-wizard {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+  Operator:  {{ .Release.Name }}-operator   (reconciles WizardRuns; reads ConfigMap {{ include "fusion-wizard.configName" . }})
+{{- if .Values.api.enabled }}
+  API:       {{ .Release.Name }}-api.{{ .Release.Namespace }}.svc:{{ .Values.api.service.port }}   (callers: {{ join ", " .Values.api.auth.allowedServiceAccounts | default "ANYONE - unauthenticated dev mode" }})
+{{- end }}
+
+List the wizards:   kubectl get wizarddefinitions -n {{ .Release.Namespace }}
+List the runs:      kubectl get wizardruns -n {{ .Release.Namespace }}
+Show shared state:  kubectl get wizardresources -n {{ .Release.Namespace }}
+
+CRDs live in crds/ and are installed by Helm only on first install; after changing them run:
+  kubectl apply -f deployment/fusion-wizard/crds/

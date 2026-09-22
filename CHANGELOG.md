@@ -26,4 +26,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - API authentication: Kubernetes TokenReview, mandatory `AUTH_ALLOWED_SA` allowlist (startup refuses an open API unless `ALLOW_UNAUTHENTICATED=true`), optional audience; `X-User-ID` / `X-User-Email` are read only from allowlisted callers, validated, and stamped on the run
 - `internal/plan` (definition expansion shared by the API and the reconciler) and `internal/envutil` (env-driven flag defaults shared by both binaries)
 - `stepstest.PythonJob`: one shared reference definition for the steps, controller and API tests
+- Helm chart `deployment/fusion-wizard` (v0.1.0): operator and API deployments, RBAC scoped to the chart, instance ConfigMap, preseeded `python-git-job` `WizardDefinition`, and synced `crds/`; `internal/chart` contract-tests the rendered manifests against the code (mutation-checked)
 

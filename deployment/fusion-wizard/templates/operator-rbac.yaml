@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+    # Weave's REST API reads the caller's role from this label (by service-account name).
+    fusion-platform.io/role: {{ .Values.operator.weaveRole | quote }}
+---
+# Namespaced on purpose: the operator never reads outside its own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["wizard.fusion-platform.io"]
+    resources: ["wizardruns"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["wizard.fusion-platform.io"]
+    resources: ["wizardruns/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["wizard.fusion-platform.io"]
+    resources: ["wizardruns/finalizers"]
+    verbs: ["update"]
+  - apiGroups: ["wizard.fusion-platform.io"]
+    resources: ["wizarddefinitions"]
+    verbs: ["get", "list", "watch"]
+  # The ledger: created, updated and deleted by the operator.
+  - apiGroups: ["wizard.fusion-platform.io"]
+    resources: ["wizardresources"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # The per-instance settings, read uncached on every reconcile.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+  # Leader election (only used with operator.leaderElection.enabled).
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-operator
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-operator
+    namespace: {{ .Release.Namespace }}

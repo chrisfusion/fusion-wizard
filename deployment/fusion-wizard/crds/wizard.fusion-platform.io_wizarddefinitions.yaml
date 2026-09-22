@@ -1,0 +1,151 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+  name: wizarddefinitions.wizard.fusion-platform.io
+spec:
+  group: wizard.fusion-platform.io
+  names:
+    kind: WizardDefinition
+    listKind: WizardDefinitionList
+    plural: wizarddefinitions
+    shortNames:
+    - wdef
+    singular: wizarddefinition
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: WizardDefinition is a reusable, instance-agnostic wizard recipe.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              WizardDefinitionSpec is an instance-agnostic recipe: which catalogue steps to run and which
+              inputs the caller must provide. Per-instance values are never written here; they come from
+              the instance config at run time.
+            properties:
+              description:
+                description: Description is a human-readable summary of what the wizard
+                  provisions.
+                type: string
+              parameters:
+                description: Parameters declares the inputs of the wizard.
+                items:
+                  description: WizardParameter declares one user-supplied input of
+                    a wizard.
+                  properties:
+                    default:
+                      description: Default is used when the run supplies no value.
+                        It takes precedence over instance config.
+                      x-kubernetes-preserve-unknown-fields: true
+                    description:
+                      description: Description is shown by clients that render a form
+                        from the definition.
+                      type: string
+                    name:
+                      description: Name is referenced as ${params.<name>} inside step
+                        params.
+                      pattern: ^[A-Za-z][A-Za-z0-9_]*$
+                      type: string
+                    pattern:
+                      description: Pattern is an optional regular expression a string
+                        value must match.
+                      type: string
+                    required:
+                      description: Required makes a run without this parameter (and
+                        without a Default) invalid.
+                      type: boolean
+                    type:
+                      default: string
+                      description: Type of the value; stringList is a JSON array of
+                        strings.
+                      enum:
+                      - string
+                      - number
+                      - boolean
+                      - stringList
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              steps:
+                description: Steps is the ordered subset of the step catalogue this
+                  wizard runs.
+                items:
+                  description: WizardStep selects one catalogue step and parameterises
+                    it.
+                  properties:
+                    forEach:
+                      description: |-
+                        ForEach optionally expands the step once per item of a stringList, e.g. "${params.entrypoints}".
+                        Each expansion sees the current item as ${item}.
+                      type: string
+                    name:
+                      description: |-
+                        Name is unique within the definition and addresses the step's outputs
+                        as ${steps.<name>.outputs.<key>}.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    params:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        Params are step-specific inputs. Values may contain ${params.x}, ${config.x},
+                        ${steps.<step>.outputs.<key>} and ${item} placeholders. Unset keys fall back to instance config.
+                      type: object
+                    type:
+                      description: Type selects the catalogue step.
+                      enum:
+                      - gitWatcher
+                      - waitBuild
+                      - tag
+                      - jobTemplate
+                      - chain
+                      - trigger
+                      type: string
+                  required:
+                  - name
+                  - type
+                  type: object
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - steps
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

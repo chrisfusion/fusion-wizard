@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Spectra's "Git Python job" wizard in catalogue form: watch a repository, wait for forge's build,
+# tag it, create a job template and chain, and one trigger per entrypoint. Instance-specific values
+# (runner image, tag name, ...) are ${config.x} references, resolved from the instance ConfigMap.
+# Keep in step with stepstest.PythonJob (internal/chart/chart_test.go enforces it).
+{{- if .Values.definitions.pythonGitJob.enabled }}
+apiVersion: wizard.fusion-platform.io/v1alpha1
+kind: WizardDefinition
+metadata:
+  name: python-git-job
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+spec:
+  description: "Build a Python app from a Git repository and schedule its entrypoints"
+  parameters:
+    - name: jobName
+      required: true
+      pattern: "^[a-z0-9-]+$"
+    - name: repoUrl
+      required: true
+    - name: repoRef
+      default: "main"
+    - name: entrypoints
+      type: stringList
+      required: true
+  steps:
+    - name: watcher
+      type: gitWatcher
+      params:
+        name: "${params.jobName}"
+        repoUrl: "${params.repoUrl}"
+        repoRef: "${params.repoRef}"
+    - name: build
+      type: waitBuild
+      params:
+        watcher: "${steps.watcher.outputs.name}"
+    - name: tag
+      type: tag
+      params:
+        artifactId: "${steps.build.outputs.artifactId}"
+        artifactName: "${steps.build.outputs.artifactName}"
+        version: "${steps.build.outputs.version}"
+        tag: "${config.tagName}"
+    - name: template
+      type: jobTemplate
+      params:
+        name: "${params.jobName}"
+        artifactName: "${steps.build.outputs.artifactName}"
+        tag: "${steps.tag.outputs.tag}"
+        image: "${config.runnerImage}"
+    - name: chain
+      type: chain
+      params:
+        name: "${params.jobName}"
+        jobTemplate: "${steps.template.outputs.name}"
+    - name: trigger
+      type: trigger
+      forEach: "${params.entrypoints}"
+      params:
+        name: "${params.jobName|k8sName}-${item|stem|k8sName}"
+        chain: "${steps.chain.outputs.name}"
+        override.ENTRYPOINT: "${item}"
+{{- end }}
