@@ -20,8 +20,16 @@ import (
 	wizardv1 "fusion-platform.io/fusion-wizard/api/v1alpha1"
 )
 
+func entrypointEntries(files ...string) []map[string]any {
+	entries := make([]map[string]any, len(files))
+	for i, f := range files {
+		entries[i] = map[string]any{"key": f, "type": "OnDemand", "schedule": ""}
+	}
+	return entries
+}
+
 func nightly(extra map[string]any) map[string]any {
-	p := map[string]any{"jobName": "nightly", "repoUrl": "https://git.example/team/nightly.git", "entrypoints": []string{"main.py", "etl/load.py"}}
+	p := map[string]any{"jobName": "nightly", "repoUrl": "https://git.example/team/nightly.git", "entrypoints": entrypointEntries("main.py", "etl/load.py")}
 	for k, v := range extra {
 		p[k] = v
 	}
@@ -59,7 +67,7 @@ func TestCreateRun(t *testing.T) {
 	if run.Spec.DefinitionSnapshot == nil || len(run.Spec.DefinitionSnapshot.Steps) != 6 {
 		t.Error("the API must snapshot the definition into the run")
 	}
-	if got := string(run.Spec.Parameters["entrypoints"].Raw); got != `["main.py","etl/load.py"]` {
+	if got := string(run.Spec.Parameters["entrypoints"].Raw); got != `[{"key":"main.py","schedule":"","type":"OnDemand"},{"key":"etl/load.py","schedule":"","type":"OnDemand"}]` {
 		t.Errorf("parameters must be stored as sent, got %s", got)
 	}
 	if _, defaulted := run.Spec.Parameters["repoRef"]; defaulted {
@@ -109,10 +117,10 @@ func TestCreateRunValidation(t *testing.T) {
 		{"invalid definition", map[string]any{"definition": "broken"}, 422, "unknown param"},
 		{"missing required parameters", map[string]any{"definition": "python-job", "parameters": map[string]any{}}, 422, `"jobName" is required`},
 		{"unknown parameter", nightly(map[string]any{"colour": "red"}), 422, "unknown parameter(s): colour"},
-		{"wrong type", nightly(map[string]any{"entrypoints": "main.py"}), 422, "expected a list of strings"},
+		{"wrong type", nightly(map[string]any{"entrypoints": "main.py"}), 422, "expected a list of objects"},
 		{"pattern violation", nightly(map[string]any{"jobName": "Nightly Job"}), 422, "does not match pattern"},
-		{"duplicate forEach items", nightly(map[string]any{"entrypoints": []string{"a.py", "a.py"}}), 422, "occurs twice"},
-		{"empty forEach item", nightly(map[string]any{"entrypoints": []string{""}}), 422, ""},
+		{"duplicate forEach items", nightly(map[string]any{"entrypoints": entrypointEntries("a.py", "a.py")}), 422, "is used twice"},
+		{"empty forEach item", nightly(map[string]any{"entrypoints": []map[string]any{{"key": "", "type": "OnDemand", "schedule": ""}}}), 422, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -342,7 +350,7 @@ func TestDefinitions(t *testing.T) {
 	if items[0].Valid || items[0].Error == "" {
 		t.Errorf("a broken definition must be flagged with a reason: %+v", items[0])
 	}
-	if !items[1].Valid || len(items[1].Spec.Parameters) != 4 {
+	if !items[1].Valid || len(items[1].Spec.Parameters) != 5 {
 		t.Errorf("the good definition must expose its parameter schema: %+v", items[1])
 	}
 

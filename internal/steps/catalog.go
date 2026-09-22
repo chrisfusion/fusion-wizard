@@ -163,8 +163,8 @@ func checkForEach(st wizardv1.WizardStep, declared map[string]wizardv1.WizardPar
 	switch {
 	case !ok:
 		fail("step %q forEach refers to undeclared parameter %q", st.Name, name)
-	case p.Type != wizardv1.ParameterStringList:
-		fail("step %q forEach parameter %q must be of type stringList", st.Name, name)
+	case p.Type != wizardv1.ParameterStringList && p.Type != wizardv1.ParameterObjectList:
+		fail("step %q forEach parameter %q must be of type stringList or objectList", st.Name, name)
 	}
 }
 
@@ -189,7 +189,7 @@ func checkRefs(value, where string, inForEach bool, declared map[string]wizardv1
 			switch {
 			case !ok:
 				fail("%s refers to undeclared parameter %q", where, r.Name)
-			case p.Type == wizardv1.ParameterStringList:
+			case p.Type == wizardv1.ParameterStringList || p.Type == wizardv1.ParameterObjectList:
 				fail("%s: list parameter %q can only be used as forEach", where, r.Name)
 			}
 		case params.RefConfig:

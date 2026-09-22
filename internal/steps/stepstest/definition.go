@@ -19,10 +19,13 @@ func PythonJob() *wizardv1.WizardDefinitionSpec {
 			{Name: "jobName", Required: true, Pattern: `^[a-z0-9-]+$`},
 			{Name: "repoUrl", Required: true},
 			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}},
-			{Name: "entrypoints", Type: wizardv1.ParameterStringList, Required: true},
+			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
+			{Name: "entrypoints", Type: wizardv1.ParameterObjectList, Required: true,
+				Description: "One entry per entrypoint file: key (filename), type (OnDemand or Cron), schedule (cron expression, Cron only, empty otherwise)"},
 		},
 		Steps: []wizardv1.WizardStep{
-			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}"}},
+			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
+				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}"}},
 			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
 			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
 				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",
@@ -31,7 +34,8 @@ func PythonJob() *wizardv1.WizardDefinitionSpec {
 				"name": "${params.jobName}", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}", "image": "${config.runnerImage}"}},
 			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}"}},
 			{Name: "trigger", Type: wizardv1.StepTrigger, ForEach: "${params.entrypoints}", Params: map[string]string{
-				"name": "${params.jobName|k8sName}-${item|stem|k8sName}", "chain": "${steps.chain.outputs.name}", "override.ENTRYPOINT": "${item}"}},
+				"name": "${params.jobName|k8sName}-${item|stem|k8sName}", "chain": "${steps.chain.outputs.name}",
+				"type": "${item.type}", "schedule": "${item.schedule}", "override.ENTRYPOINT": "${item}"}},
 		},
 	}
 }

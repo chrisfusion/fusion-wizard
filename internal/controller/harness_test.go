@@ -108,7 +108,37 @@ func (h *harness) createRun(name string, params map[string]string, entrypoints .
 		if i > 0 {
 			eps += ","
 		}
-		eps += `"` + e + `"`
+		eps += `{"key":"` + e + `","type":"OnDemand","schedule":""}`
+	}
+	p := map[string]apiextensionsv1.JSON{"entrypoints": js(eps + "]")}
+	for k, v := range params {
+		p[k] = js(`"` + v + `"`)
+	}
+	run := &wizardv1.WizardRun{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Spec: wizardv1.WizardRunSpec{
+			DefinitionRef: corev1.LocalObjectReference{Name: "python-job"},
+			Parameters:    p, DesiredState: wizardv1.DesiredApplied,
+		},
+	}
+	if err := h.c.Create(context.Background(), run); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// entrypointEntry is one entrypoints objectList entry for createRunWithEntries.
+type entrypointEntry struct{ file, typ, schedule string }
+
+// createRunWithEntries is createRun with explicit per-entrypoint type/schedule, for tests that need
+// a mix of OnDemand and Cron entries (createRun itself always uses OnDemand).
+func (h *harness) createRunWithEntries(name string, params map[string]string, entries ...entrypointEntry) {
+	h.t.Helper()
+	eps := "["
+	for i, e := range entries {
+		if i > 0 {
+			eps += ","
+		}
+		eps += `{"key":"` + e.file + `","type":"` + e.typ + `","schedule":"` + e.schedule + `"}`
 	}
 	p := map[string]apiextensionsv1.JSON{"entrypoints": js(eps + "]")}
 	for k, v := range params {

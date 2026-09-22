@@ -84,6 +84,38 @@ func TestHappyPathProvisionsEverything(t *testing.T) {
 	}
 }
 
+// TestMixedOnDemandAndCronEntrypoints is the point of Phase 4b: two entrypoints of the same run get
+// independently-typed triggers from one objectList forEach, which a plain stringList forEach could
+// never express (the trigger step's type/schedule params would be identical across every expansion).
+func TestMixedOnDemandAndCronEntrypoints(t *testing.T) {
+	h := newHarness(t)
+	h.createDefinition("python-job", pythonDefinition())
+	h.forgeHasBuilt()
+	h.createRunWithEntries("run-a", nightlyParams,
+		entrypointEntry{file: "main.py", typ: "OnDemand"},
+		entrypointEntry{file: "report.py", typ: "Cron", schedule: "0 9 * * *"},
+	)
+
+	h.reconcile("run-a")
+	run := h.mustRun("run-a")
+	if run.Status.Phase != wizardv1.RunReady {
+		t.Fatalf("status = %+v", run.Status)
+	}
+
+	onDemand := h.weave.Objs["triggers/nightly-main"]["spec"].(map[string]any)
+	if onDemand["type"] != "OnDemand" {
+		t.Errorf("main.py spec = %v", onDemand)
+	}
+	if _, has := onDemand["schedule"]; has {
+		t.Error("an OnDemand trigger must not carry a schedule")
+	}
+
+	cron := h.weave.Objs["triggers/nightly-report"]["spec"].(map[string]any)
+	if cron["type"] != "Cron" || cron["schedule"] != "0 9 * * *" {
+		t.Errorf("report.py spec = %v", cron)
+	}
+}
+
 func TestPollingAndProgressAcrossReconciles(t *testing.T) {
 	h := newHarness(t)
 	h.createDefinition("python-job", pythonDefinition())
@@ -290,7 +322,7 @@ func TestInvalidInputsFailTheRunWithAClearMessage(t *testing.T) {
 		}, `"repoUrl" is required`},
 		{"duplicate forEach items", func(h *harness) {
 			h.createDefinition("python-job", pythonDefinition())
-		}, "occurs twice"},
+		}, "is used twice"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

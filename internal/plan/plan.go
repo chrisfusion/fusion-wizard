@@ -19,6 +19,9 @@ type Instance struct {
 	Key  string // the step name, or "<name>/<item>" for a forEach expansion
 	Step wizardv1.WizardStep
 	Item *string // set for forEach expansions
+	// ItemFields is set only when the forEach source is an objectList: the current item's full
+	// field map, for ${item.<field>} in this instance's step params.
+	ItemFields map[string]string
 }
 
 // Expand turns a definition into its ordered step instances. Parameters are known when the run
@@ -49,12 +52,12 @@ func Expand(def *wizardv1.WizardDefinitionSpec, values map[string]any) ([]Instan
 		if err != nil {
 			return nil, fmt.Errorf("step %q: %w", st.Name, err)
 		}
-		for _, item := range items {
-			if item == "" {
+		for _, it := range items {
+			if it.Key == "" {
 				return nil, fmt.Errorf("step %q: forEach items must not be empty", st.Name)
 			}
-			item := item
-			if err := add(Instance{Key: st.Name + "/" + item, Step: st, Item: &item}); err != nil {
+			key := it.Key
+			if err := add(Instance{Key: st.Name + "/" + key, Step: st, Item: &key, ItemFields: it.Fields}); err != nil {
 				return nil, err
 			}
 		}

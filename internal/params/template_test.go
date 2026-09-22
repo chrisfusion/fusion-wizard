@@ -147,8 +147,8 @@ func TestResolveMap(t *testing.T) {
 func TestResolveList(t *testing.T) {
 	ctx := Context{Params: map[string]any{"files": []string{"a.py", "b.py"}, "name": "x"}}
 	got, err := ResolveList("${params.files}", ctx)
-	if err != nil || len(got) != 2 || got[1] != "b.py" {
-		t.Fatalf("got %v, %v", got, err)
+	if err != nil || len(got) != 2 || got[1].Key != "b.py" || got[1].Fields != nil {
+		t.Fatalf("got %+v, %v", got, err)
 	}
 	for _, bad := range []string{"${params.name}", "${params.files|lower}", "x${params.files}", "${config.a}", "literal", "${params.nope}"} {
 		if _, err := ResolveList(bad, ctx); err == nil {
@@ -156,3 +156,42 @@ func TestResolveList(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveListObjectList(t *testing.T) {
+	ctx := Context{Params: map[string]any{
+		"entries": []map[string]string{
+			{"key": "main.py", "type": "OnDemand", "schedule": ""},
+			{"key": "report.py", "type": "Cron", "schedule": "0 9 * * *"},
+		},
+	}}
+	got, err := ResolveList("${params.entries}", ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Key != "main.py" || got[1].Key != "report.py" {
+		t.Fatalf("got %+v", got)
+	}
+	if got[1].Fields["type"] != "Cron" || got[1].Fields["schedule"] != "0 9 * * *" {
+		t.Fatalf("fields = %+v", got[1].Fields)
+	}
+}
+
+func TestItemFieldAccess(t *testing.T) {
+	ctx := Context{Item: strPtr("main.py"), ItemFields: map[string]string{"key": "main.py", "type": "Cron"}}
+	if got, err := Resolve("${item}", ctx); err != nil || got != "main.py" {
+		t.Fatalf("bare item: got %q, %v", got, err)
+	}
+	if got, err := Resolve("${item.type}", ctx); err != nil || got != "Cron" {
+		t.Fatalf("item.type: got %q, %v", got, err)
+	}
+	if _, err := Resolve("${item.schedule}", ctx); err == nil {
+		t.Error("missing field: want error")
+	}
+
+	plain := Context{Item: strPtr("main.py")}
+	if _, err := Resolve("${item.type}", plain); err == nil {
+		t.Error("item.field on a plain stringList forEach: want error")
+	}
+}
+
+func strPtr(s string) *string { return &s }

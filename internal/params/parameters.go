@@ -109,6 +109,29 @@ func decode(d wizardv1.WizardParameter, raw []byte) (any, error) {
 			}
 		}
 		return list, nil
+	case wizardv1.ParameterObjectList:
+		var list []map[string]string
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, errors.New("expected a list of objects with string values")
+		}
+		if d.Required && len(list) == 0 {
+			return nil, errors.New("must not be empty")
+		}
+		seen := make(map[string]struct{}, len(list))
+		for i, obj := range list {
+			key := obj["key"]
+			if key == "" {
+				return nil, fmt.Errorf("entry %d: must have a non-empty %q field", i, "key")
+			}
+			if _, dup := seen[key]; dup {
+				return nil, fmt.Errorf("entry %d: key %q is used twice", i, key)
+			}
+			seen[key] = struct{}{}
+			if err := match(key); err != nil {
+				return nil, err
+			}
+		}
+		return list, nil
 	default: // string, including an unset type (the CRD defaults it, API-built objects may not)
 		var s string
 		if err := json.Unmarshal(raw, &s); err != nil {

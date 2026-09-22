@@ -53,3 +53,30 @@ func TestExpand(t *testing.T) {
 		t.Error("a missing list parameter must be an error")
 	}
 }
+
+func TestExpandObjectList(t *testing.T) {
+	def := definition()
+	insts, err := Expand(&def, map[string]any{"entrypoints": []map[string]string{
+		{"key": "main.py", "type": "OnDemand", "schedule": ""},
+		{"key": "report.py", "type": "Cron", "schedule": "0 9 * * *"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(insts) != 7 {
+		t.Fatalf("got %d instances", len(insts))
+	}
+	last := insts[6]
+	if last.Key != "trigger/report.py" || last.Item == nil || *last.Item != "report.py" {
+		t.Errorf("last instance = %+v", last)
+	}
+	if last.ItemFields["type"] != "Cron" || last.ItemFields["schedule"] != "0 9 * * *" {
+		t.Errorf("ItemFields = %+v", last.ItemFields)
+	}
+	if insts[5].ItemFields["key"] != "main.py" {
+		t.Errorf("ItemFields = %+v", insts[5].ItemFields)
+	}
+	if insts[0].ItemFields != nil {
+		t.Error("a plain (non-forEach) instance must not carry ItemFields")
+	}
+}

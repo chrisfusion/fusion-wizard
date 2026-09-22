@@ -115,3 +115,37 @@ func TestResolveParametersRequiredEmptyString(t *testing.T) {
 		t.Fatal("empty string must not satisfy a required parameter")
 	}
 }
+
+func TestResolveParametersObjectList(t *testing.T) {
+	defs := []wizardv1.WizardParameter{
+		{Name: "entries", Type: wizardv1.ParameterObjectList, Required: true, Pattern: `\.py$`},
+	}
+	got, err := ResolveParameters(defs, map[string]apiextensionsv1.JSON{
+		"entries": js(`[{"key":"main.py","type":"OnDemand","schedule":""},{"key":"report.py","type":"Cron","schedule":"0 9 * * *"}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]string{
+		{"key": "main.py", "type": "OnDemand", "schedule": ""},
+		{"key": "report.py", "type": "Cron", "schedule": "0 9 * * *"},
+	}
+	if !reflect.DeepEqual(got["entries"], want) {
+		t.Errorf("got %#v\nwant %#v", got["entries"], want)
+	}
+
+	for name, raw := range map[string]string{
+		"missing key":    `[{"type":"OnDemand"}]`,
+		"empty key":      `[{"key":"","type":"OnDemand"}]`,
+		"duplicate key":  `[{"key":"a.py"},{"key":"a.py"}]`,
+		"pattern on key": `[{"key":"notpython"}]`,
+	} {
+		if _, err := ResolveParameters(defs, map[string]apiextensionsv1.JSON{"entries": js(raw)}); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+
+	if _, err := ResolveParameters(defs, map[string]apiextensionsv1.JSON{"entries": js(`[]`)}); err == nil {
+		t.Error("required objectList must not accept an empty list")
+	}
+}

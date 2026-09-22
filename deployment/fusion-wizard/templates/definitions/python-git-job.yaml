@@ -21,9 +21,13 @@ spec:
       required: true
     - name: repoRef
       default: "main"
+    - name: projectDir
+      default: ""
+      description: "Relative path containing metadata.yaml (optional)"
     - name: entrypoints
-      type: stringList
+      type: objectList
       required: true
+      description: "One entry per entrypoint file: key (filename), type (OnDemand or Cron), schedule (cron expression, Cron only, empty otherwise)"
   steps:
     - name: watcher
       type: gitWatcher
@@ -31,6 +35,7 @@ spec:
         name: "${params.jobName}"
         repoUrl: "${params.repoUrl}"
         repoRef: "${params.repoRef}"
+        projectDir: "${params.projectDir}"
     - name: build
       type: waitBuild
       params:
@@ -60,5 +65,7 @@ spec:
       params:
         name: "${params.jobName|k8sName}-${item|stem|k8sName}"
         chain: "${steps.chain.outputs.name}"
+        type: "${item.type}"
+        schedule: "${item.schedule}"
         override.ENTRYPOINT: "${item}"
 {{- end }}

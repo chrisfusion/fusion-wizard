@@ -270,7 +270,7 @@ func (r *WizardRunReconciler) runInstance(ctx context.Context, env *steps.Env, r
 	if !ok {
 		return fail(fmt.Sprintf("unknown step type %q", in.Step.Type))
 	}
-	pctx := params.Context{Params: values, Config: env.Cfg.Values(), Steps: outputs, Item: in.Item}
+	pctx := params.Context{Params: values, Config: env.Cfg.Values(), Steps: outputs, Item: in.Item, ItemFields: in.ItemFields}
 	resolved, err := params.ResolveMap(in.Step.Params, pctx)
 	if err != nil {
 		return fail("resolving params: " + err.Error())

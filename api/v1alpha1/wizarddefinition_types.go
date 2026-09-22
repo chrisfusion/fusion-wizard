@@ -34,7 +34,7 @@ const (
 )
 
 // ParameterType is the value type of a wizard parameter.
-// +kubebuilder:validation:Enum=string;number;boolean;stringList
+// +kubebuilder:validation:Enum=string;number;boolean;stringList;objectList
 type ParameterType string
 
 const (
@@ -42,6 +42,14 @@ const (
 	ParameterNumber     ParameterType = "number"
 	ParameterBoolean    ParameterType = "boolean"
 	ParameterStringList ParameterType = "stringList"
+	// ParameterObjectList is a JSON array of flat, string-valued objects — the only forEach source
+	// besides stringList. Every entry must have a non-empty "key" field: it is both the forEach
+	// item's unique identity (bare ${item} still means "this entry's key", exactly like a plain
+	// stringList item) and, conventionally, what a definition author names the entry after. Other
+	// fields are read with ${item.<field>}. Every entry should carry the same set of fields, with
+	// "" for one that does not apply to that entry — there is no per-field default, referencing a
+	// field an entry omits is an error.
+	ParameterObjectList ParameterType = "objectList"
 )
 
 // WizardParameter declares one user-supplied input of a wizard.

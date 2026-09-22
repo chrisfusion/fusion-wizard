@@ -152,7 +152,7 @@ func TestUserIdentityHeaders(t *testing.T) {
 	h := newHarness(t)
 	h.seedPythonJob()
 	body := map[string]any{"definition": "python-job", "parameters": map[string]any{
-		"jobName": "nightly", "repoUrl": "https://g/x.git", "entrypoints": []string{"main.py"}}}
+		"jobName": "nightly", "repoUrl": "https://g/x.git", "entrypoints": []map[string]any{{"key": "main.py", "type": "OnDemand", "schedule": ""}}}}
 	auth := map[string]string{"Authorization": "Bearer " + bffToken}
 	with := func(k, v string) map[string]string {
 		m := map[string]string{}

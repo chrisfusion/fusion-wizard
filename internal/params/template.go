@@ -37,7 +37,11 @@ type Context struct {
 	Params map[string]any               // typed values from ResolveParameters
 	Config map[string]string            // instancecfg.Config.Values()
 	Steps  map[string]map[string]string // step name -> outputs of steps that already ran
-	Item   *string                      // current forEach item, nil outside forEach
+	Item   *string                      // current forEach item's key, nil outside forEach
+	// ItemFields is set only when the forEach source is an objectList: the current item's full
+	// field map (including "key"), for ${item.<field>} access. Bare ${item} still means Item
+	// above regardless of the source's type — the same placeholder works for both.
+	ItemFields map[string]string
 }
 
 // UnresolvedError reports a reference that has no value in the Context.
@@ -105,6 +109,8 @@ func parseRef(expr string) (*Ref, error) {
 	switch {
 	case len(path) == 1 && path[0] == "item":
 		ref.Kind = RefItem
+	case len(path) == 2 && path[0] == "item" && path[1] != "":
+		ref.Kind, ref.Name = RefItem, path[1] // ${item.<field>}, objectList forEach only
 	case len(path) == 2 && path[0] == "params" && path[1] != "":
 		ref.Kind, ref.Name = RefParams, path[1]
 	case len(path) == 2 && path[0] == "config" && path[1] != "":
@@ -112,7 +118,7 @@ func parseRef(expr string) (*Ref, error) {
 	case len(path) == 4 && path[0] == "steps" && path[2] == "outputs" && path[1] != "" && path[3] != "":
 		ref.Kind, ref.Name, ref.Key = RefSteps, path[1], path[3]
 	default:
-		return nil, fmt.Errorf("invalid reference ${%s}: want params.<name>, config.<key>, steps.<step>.outputs.<key> or item", strings.TrimSpace(expr))
+		return nil, fmt.Errorf("invalid reference ${%s}: want params.<name>, config.<key>, steps.<step>.outputs.<key>, item or item.<field>", strings.TrimSpace(expr))
 	}
 	for _, f := range parts[1:] {
 		f = strings.TrimSpace(f)
@@ -176,7 +182,17 @@ func lookup(r Ref, c Context) (any, error) {
 		if c.Item == nil {
 			return nil, &UnresolvedError{r.Raw, "${item} is only available inside a forEach step"}
 		}
-		return *c.Item, nil
+		if r.Name == "" {
+			return *c.Item, nil
+		}
+		if c.ItemFields == nil {
+			return nil, &UnresolvedError{r.Raw, "needs an objectList forEach source (this one is a plain stringList)"}
+		}
+		v, ok := c.ItemFields[r.Name]
+		if !ok {
+			return nil, &UnresolvedError{r.Raw, fmt.Sprintf("this forEach item has no field %q", r.Name)}
+		}
+		return v, nil
 	case RefParams:
 		v, ok := c.Params[r.Name]
 		if !ok {
@@ -256,13 +272,21 @@ func ListRef(s string) (string, error) {
 		return "", err
 	}
 	if len(t.segments) != 1 || t.segments[0].ref == nil || t.segments[0].ref.Kind != RefParams || len(t.segments[0].ref.Filters) > 0 {
-		return "", fmt.Errorf("forEach %q must be a single ${params.<name>} reference to a stringList parameter", s)
+		return "", fmt.Errorf("forEach %q must be a single ${params.<name>} reference to a stringList or objectList parameter", s)
 	}
 	return t.segments[0].ref.Name, nil
 }
 
-// ResolveList resolves a forEach source (see ListRef) to the list parameter's items.
-func ResolveList(s string, c Context) ([]string, error) {
+// ForEachItem is one expansion of a forEach: Key identifies the instance (unique, non-empty) and is
+// what bare ${item} resolves to; Fields is set only for an objectList source, for ${item.<field>}.
+type ForEachItem struct {
+	Key    string
+	Fields map[string]string
+}
+
+// ResolveList resolves a forEach source (see ListRef) to its items — either a stringList (Key is the
+// item itself, Fields nil) or an objectList (Key is each entry's "key" field, Fields is the entry).
+func ResolveList(s string, c Context) ([]ForEachItem, error) {
 	name, err := ListRef(s)
 	if err != nil {
 		return nil, err
@@ -271,9 +295,20 @@ func ResolveList(s string, c Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	list, ok := v.([]string)
-	if !ok {
-		return nil, fmt.Errorf("forEach %q: parameter %q is not a stringList", s, name)
+	switch list := v.(type) {
+	case []string:
+		items := make([]ForEachItem, len(list))
+		for i, s := range list {
+			items[i] = ForEachItem{Key: s}
+		}
+		return items, nil
+	case []map[string]string:
+		items := make([]ForEachItem, len(list))
+		for i, m := range list {
+			items[i] = ForEachItem{Key: m["key"], Fields: m}
+		}
+		return items, nil
+	default:
+		return nil, fmt.Errorf("forEach %q: parameter %q is not a stringList or objectList", s, name)
 	}
-	return list, nil
 }
