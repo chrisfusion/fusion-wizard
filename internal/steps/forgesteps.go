@@ -119,11 +119,14 @@ func (waitBuildStep) Ensure(ctx context.Context, env *Env, in Input) (Result, er
 		version = *build.IndexArtifactVersion
 	}
 
-	// Forge skips a version it already built, even after its artifact was deleted. Catch that here
-	// with a clear message instead of tagging and deploying something that is not there.
+	// Forge's GitWatcher reconciler self-heals a build row whose index artifact vanished (e.g.
+	// deleted by our own rollback): it rebuilds on its own next reconcile tick, which is not
+	// synchronous with this poll. Retry instead of failing outright; BuildTimeout above still
+	// bounds it if forge never catches up.
 	art, err := env.Index.FindArtifact(ctx, artifactName)
 	if errors.Is(err, upstream.ErrNotFound) {
-		return Result{}, permanentf("build %d succeeded but artifact %q no longer exists in the index; forge will not rebuild a version it already built", build.ID, artifactName)
+		return Result{Requeue: env.Cfg.PollInterval, Outputs: progress,
+			Message: fmt.Sprintf("build %d succeeded but artifact %q is missing from the index; waiting for forge to notice and rebuild", build.ID, artifactName)}, nil
 	}
 	if err != nil {
 		return Result{}, err

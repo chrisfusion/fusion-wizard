@@ -222,11 +222,17 @@ func TestWaitBuildFailures(t *testing.T) {
 		t.Errorf("success without artifact: %v", err)
 	}
 
-	// Forge skips a version it built before, even if the artifact was deleted since.
+	// Forge's own GitWatcher reconciler self-heals a build whose artifact vanished, but not
+	// synchronously with this poll — so retry instead of failing outright.
 	delete(r.index.Artifacts, "app.nightly")
 	r.forge.SetBuild(succeeded(1))
-	if _, err := r.wait(t, Input{}); !IsPermanent(err) || !strings.Contains(err.Error(), "no longer exists") {
-		t.Errorf("artifact gone from the index: %v", err)
+	if res, err := r.wait(t, Input{}); err != nil || res.Done || res.Requeue == 0 || !strings.Contains(res.Message, "missing from the index") {
+		t.Errorf("artifact gone from the index: %+v %v", res, err)
+	}
+
+	// Still bounded by BuildTimeout if forge never catches up.
+	if _, err := r.wait(t, Input{StartedAt: r.now.Add(-11 * time.Minute)}); !IsPermanent(err) || !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("artifact never comes back: %v", err)
 	}
 }
 

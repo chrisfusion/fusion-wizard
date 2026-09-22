@@ -37,7 +37,7 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - Tests that call `Ensure` need a rig with NO pre-seeded upstream objects if they expect the wizard to own (and delete) them — pre-seeded ones are correctly treated as unowned
 - Weave specs are generic `map[string]any` (no import of fusion-weave types); `waitBuild` matches builds by repoUrl+projectDir because forge clears `lastBuildName` on success
 - `config/rbac/` and chart RBAC templates are hand-maintained pairs
-- Open risk: forge has no per-build delete, so re-running a rolled-back version can hit "version already built in DB — skipping"
+- Forge's `GitWatcher` reconciler self-heals a build whose index artifact vanished (e.g. deleted by our rollback): it rebuilds on its own next tick, plus a `POST /api/v1/builds/index-drift-cleanup` backstop for watchers that never reconcile again (not yet released as of 2026-09-22). `waitBuild` retries a missing-artifact build up to `BuildTimeout` instead of failing immediately, to give forge a chance to catch up
 
 ## Rules
 - Never `helm upgrade` live `fusion`/`fusion-dev-a`/`fusion-dev-b`; e2e in a disposable namespace
