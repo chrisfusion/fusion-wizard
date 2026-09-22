@@ -71,3 +71,10 @@ func (w *WeaveClient) Create(ctx context.Context, collection string, obj WeaveOb
 func (w *WeaveClient) Delete(ctx context.Context, collection, name string) error {
 	return ignoreNotFound(w.c.do(ctx, http.MethodDelete, weavePath(collection, name), nil, nil, nil))
 }
+
+// Fire asks weave to create one run from the named WeaveTrigger immediately, the same way
+// spectra's UI does: PATCH the trigger with the "fusion-platform.io/fire" annotation.
+func (w *WeaveClient) Fire(ctx context.Context, name string) error {
+	patch := WeaveObject{"metadata": map[string]any{"annotations": map[string]any{"fusion-platform.io/fire": "true"}}}
+	return w.c.do(ctx, http.MethodPatch, weavePath(WeaveTriggers, name), nil, patch, nil)
+}

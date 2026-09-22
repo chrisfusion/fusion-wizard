@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Spectra's "Git Batch Job" wizard in catalogue form: watch a repository, wait for forge's build,
+# tag it, create a job template and chain, and fire one trigger immediately. Instance-specific
+# values (runner image, tag name, ...) are ${config.x} references, resolved from the instance
+# ConfigMap.
+# Keep in step with stepstest.BatchJob (internal/chart/chart_test.go enforces it).
+{{- if .Values.definitions.batchGitJob.enabled }}
+apiVersion: wizard.fusion-platform.io/v1alpha1
+kind: WizardDefinition
+metadata:
+  name: batch-git-job
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+spec:
+  description: "Build and start a single batch job from a Git repository, branch and subfolder"
+  parameters:
+    - name: jobName
+      required: true
+      pattern: "^[a-z0-9-]+$"
+      description: "Shared Kubernetes name for the watcher, chain, job blueprint and trigger"
+    - name: repoUrl
+      required: true
+      description: "Public HTTP(S) git URL"
+    - name: repoRef
+      default: "main"
+      description: "Branch or tag to watch"
+    - name: projectDir
+      default: ""
+      description: "Relative path containing metadata.yaml (optional)"
+    - name: triggerType
+      default: "OnDemand"
+      description: "OnDemand or Cron — the batch always starts once immediately either way"
+    - name: schedule
+      default: ""
+      description: "Cron schedule for future runs; only used when triggerType is Cron"
+  steps:
+    - name: watcher
+      type: gitWatcher
+      params:
+        name: "${params.jobName}"
+        repoUrl: "${params.repoUrl}"
+        repoRef: "${params.repoRef}"
+        projectDir: "${params.projectDir}"
+    - name: build
+      type: waitBuild
+      params:
+        watcher: "${steps.watcher.outputs.name}"
+    - name: tag
+      type: tag
+      params:
+        artifactId: "${steps.build.outputs.artifactId}"
+        artifactName: "${steps.build.outputs.artifactName}"
+        version: "${steps.build.outputs.version}"
+        tag: "${config.tagName}"
+    - name: template
+      type: jobTemplate
+      params:
+        name: "${params.jobName}"
+        artifactName: "${steps.build.outputs.artifactName}"
+        tag: "${steps.tag.outputs.tag}"
+        image: "${config.runnerImage}"
+    - name: chain
+      type: chain
+      params:
+        name: "${params.jobName}"
+        jobTemplate: "${steps.template.outputs.name}"
+    - name: trigger
+      type: trigger
+      params:
+        name: "${params.jobName}"
+        chain: "${steps.chain.outputs.name}"
+        type: "${params.triggerType}"
+        schedule: "${params.schedule}"
+        fireOnCreate: "true"
+{{- end }}

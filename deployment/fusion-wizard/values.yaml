@@ -106,3 +106,5 @@ api:
 definitions:
   pythonGitJob:
     enabled: true
+  batchGitJob:
+    enabled: true

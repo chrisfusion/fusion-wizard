@@ -117,7 +117,30 @@ func TestPreseededDefinitionIsValidAndMatchesTheCode(t *testing.T) {
 
 	objs := mustRender(t, append([]string{"--set", "definitions.pythonGitJob.enabled=false"}, goodArgs...)...)
 	for _, o := range objs {
-		if o.kind() == "WizardDefinition" {
+		if o.kind() == "WizardDefinition" && o.name() == "python-git-job" {
+			t.Error("the definition must be switchable off")
+		}
+	}
+}
+
+func TestBatchJobDefinitionIsValidAndMatchesTheCode(t *testing.T) {
+	def := reroundtrip[wizardv1.WizardDefinition](t, find(t, mustRender(t, goodArgs...), "WizardDefinition", "batch-git-job"))
+
+	if err := steps.ValidateDefinition(&def.Spec); err != nil {
+		t.Fatalf("the shipped definition is invalid: %v", err)
+	}
+	if want := stepstest.BatchJob(); !equality.Semantic.DeepEqual(def.Spec, *want) {
+		got, _ := yaml.Marshal(def.Spec)
+		exp, _ := yaml.Marshal(want)
+		t.Errorf("chart definition differs from stepstest.BatchJob\n--- chart ---\n%s\n--- code ---\n%s", got, exp)
+	}
+	if def.Namespace != namespace {
+		t.Errorf("definition namespace = %q", def.Namespace)
+	}
+
+	objs := mustRender(t, append([]string{"--set", "definitions.batchGitJob.enabled=false"}, goodArgs...)...)
+	for _, o := range objs {
+		if o.kind() == "WizardDefinition" && o.name() == "batch-git-job" {
 			t.Error("the definition must be switchable off")
 		}
 	}

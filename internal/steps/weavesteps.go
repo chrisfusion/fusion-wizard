@@ -24,8 +24,11 @@ const overridePrefix = "override."
 // weaveResource ensures one weave custom resource. matches inspects the existing object's spec and
 // returns what differs ("" when it is what this step wants). The weave API forces the namespace, so
 // the wizard only supplies the name.
+// afterCreate, when non-nil, runs once right after Create's upstream POST succeeds — never on a
+// call that instead adopts or re-confirms an already-existing resource (that path never reaches
+// Create at all). Used by the trigger step's fireOnCreate.
 func (e *Env) weaveResource(ctx context.Context, in Input, kind, name, hash string, obj upstream.WeaveObject,
-	matches func(spec map[string]any) string, outputs map[string]string) (Result, error) {
+	matches func(spec map[string]any) string, afterCreate func(ctx context.Context) error, outputs map[string]string) (Result, error) {
 
 	collection := weaveCollection(kind)
 	return e.ensureStep(ctx, in, managed{
@@ -45,8 +48,15 @@ func (e *Env) weaveResource(ctx context.Context, in Input, kind, name, hash stri
 		},
 		Create: func(ctx context.Context) (string, error) {
 			stampOwnerLabels(obj, in.Run)
-			_, err := e.Weave.Create(ctx, collection, obj)
-			return "", err
+			if _, err := e.Weave.Create(ctx, collection, obj); err != nil {
+				return "", err
+			}
+			if afterCreate != nil {
+				if err := afterCreate(ctx); err != nil {
+					return "", err
+				}
+			}
+			return "", nil
 		},
 	}, outputs)
 }
@@ -102,7 +112,7 @@ func (jobTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Result, 
 				return "it runs a different artifact or tag"
 			}
 			return ""
-		}, map[string]string{"name": name})
+		}, nil, map[string]string{"name": name})
 }
 
 // ---- chain ----
@@ -135,7 +145,7 @@ func (chainStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error)
 				}
 			}
 			return "it does not run this job template"
-		}, map[string]string{"name": name})
+		}, nil, map[string]string{"name": name})
 }
 
 // ---- trigger ----
@@ -145,17 +155,22 @@ type triggerStep struct{}
 func (triggerStep) Type() wizardv1.StepType { return wizardv1.StepTrigger }
 func (triggerStep) Outputs() []string       { return []string{"name"} }
 func (triggerStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule"}, Prefixes: []string{overridePrefix}}
+	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule", "fireOnCreate"}, Prefixes: []string{overridePrefix}}
 }
 
 // Ensure creates a WeaveTrigger (OnDemand or Cron) for the chain. Params prefixed "override."
 // become environment overrides injected into every run the trigger creates, e.g.
 // "override.ENTRYPOINT" -> parameterOverrides [{name: ENTRYPOINT, value: ...}]. Unlike spectra,
 // an existing trigger with a different schedule or overrides is a conflict, not silently reused.
+//
+// fireOnCreate: "true" asks weave to fire one run immediately, but only the call that actually
+// creates the trigger does so — adopting or re-confirming an existing one never re-fires it, so a
+// later reconcile of this same step (or a second run sharing the trigger) is a no-op here.
 func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name, chain := in.Params["name"], in.Params["chain"]
 	typ := firstNonEmpty(in.Params["type"], "OnDemand")
 	schedule := in.Params["schedule"]
+	fireOnCreate := in.Params["fireOnCreate"] == "true"
 	switch {
 	case typ != "OnDemand" && typ != "Cron":
 		return Result{}, permanentf("trigger type %q is not supported (use OnDemand or Cron)", typ)
@@ -185,6 +200,11 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 		spec["parameterOverrides"] = list
 	}
 
+	var afterCreate func(context.Context) error
+	if fireOnCreate {
+		afterCreate = func(ctx context.Context) error { return env.Weave.Fire(ctx, name) }
+	}
+
 	return env.weaveResource(ctx, in, KindTrigger, name,
 		ledger.Hash(append([]string{KindTrigger, chain, typ, schedule}, pairs...)...),
 		upstream.NewWeaveObject("WeaveTrigger", name, spec),
@@ -198,7 +218,7 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 				return "it has different parameter overrides"
 			}
 			return ""
-		}, map[string]string{"name": name})
+		}, afterCreate, map[string]string{"name": name})
 }
 
 func existingPairs(spec map[string]any) []string {

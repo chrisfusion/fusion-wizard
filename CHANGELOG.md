@@ -35,3 +35,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - `waitBuild` no longer fails a run permanently when forge reports a build `SUCCESS` but its index artifact is missing (e.g. deleted by our own rollback): forge's `GitWatcher` reconciler now self-heals this case on its own (see fusion-forge's `index-drift-cleanup`), just not synchronously with our poll, so `waitBuild` retries up to `BuildTimeout` instead of giving up immediately. Verified end-to-end against a real forge/index in minikube.
 
+### Added
+- Trigger step: new optional `fireOnCreate` param — when `"true"`, PATCHes the new `WeaveTrigger` with weave's fire annotation once, immediately after this call actually creates it (never on a call that adopts or re-confirms an already-existing trigger, so retries and a second run sharing the trigger never re-fire it). Added `WeaveClient.Fire` / `Weave.Fire` to the upstream interface for this. Closes the gap where fusion-wizard could not replicate spectra's "batch job starts once immediately" wizard behavior.
+- New pre-seeded `WizardDefinition` `batch-git-job` (`definitions.batchGitJob.enabled`, default `true`): spectra's "Git Batch Job" wizard in catalogue form — one fixed trigger (`type`/`schedule` parameterised, `fireOnCreate: true`) instead of `python-git-job`'s per-entrypoint `forEach`. Matching reference fixture `stepstest.BatchJob`.
+

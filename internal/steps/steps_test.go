@@ -485,6 +485,34 @@ func TestTriggerSpecs(t *testing.T) {
 	}
 }
 
+func TestTriggerFireOnCreate(t *testing.T) {
+	r := newRig(t)
+	p := map[string]string{"name": "t", "chain": "ch", "fireOnCreate": "true"}
+
+	r.mustDone(t, wizardv1.StepTrigger, "run-a", "trigger", p)
+	if n := r.log.Count("fire weave/triggers/t"); n != 1 {
+		t.Fatalf("fire count after create = %d, want 1", n)
+	}
+
+	// A second run adopting the same (identical) trigger must not re-fire it.
+	r.mustDone(t, wizardv1.StepTrigger, "run-b", "trigger", p)
+	if n := r.log.Count("fire weave/triggers/t"); n != 1 {
+		t.Errorf("fire count after adopt = %d, want still 1", n)
+	}
+
+	// Re-running the same step instance (e.g. a reconcile after Done) must not re-fire either.
+	r.mustDone(t, wizardv1.StepTrigger, "run-a", "trigger", p)
+	if n := r.log.Count("fire weave/triggers/t"); n != 1 {
+		t.Errorf("fire count after re-ensure = %d, want still 1", n)
+	}
+
+	// fireOnCreate unset/false never fires.
+	r.mustDone(t, wizardv1.StepTrigger, "run-a", "trigger2", map[string]string{"name": "t2", "chain": "ch"})
+	if n := r.log.Count("fire weave/triggers/t2"); n != 0 {
+		t.Errorf("fire count without fireOnCreate = %d, want 0", n)
+	}
+}
+
 func TestTriggerReuseRequiresIdenticalSettings(t *testing.T) {
 	r := newRig(t)
 	p := map[string]string{"name": "t", "chain": "ch", "override.ENTRYPOINT": "a.py", "override.MODE": "fast"}

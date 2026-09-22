@@ -55,6 +55,7 @@ type (
 		Get(ctx context.Context, collection, name string) (upstream.WeaveObject, error)
 		Create(ctx context.Context, collection string, obj upstream.WeaveObject) (upstream.WeaveObject, error)
 		Delete(ctx context.Context, collection, name string) error
+		Fire(ctx context.Context, name string) error
 	}
 )
 

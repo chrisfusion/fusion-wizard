@@ -15,6 +15,7 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 ## Design invariants (agreed, don't re-litigate)
 - CRDs (`wizard.fusion-platform.io`): `WizardDefinition` (instance-agnostic recipe), `WizardRun` (state), `WizardResource` (ledger). Not built on weave.
 - Step order is fixed (`gitWatcher, waitBuild, tag, jobTemplate, chain, trigger`); a definition picks a subset in that order.
+- Trigger step `fireOnCreate: "true"` fires the trigger once, right after the call that actually creates it (never on adopt/re-confirm) — added 2026-09-22 so `batch-git-job` can replicate spectra's "starts once immediately" wizard behavior. The catalogue still has no per-`forEach`-item type/schedule (blocks migrating `python-git-job` with mixed OnDemand/Cron entrypoints) and no batch/many-cron-entries step (blocks BatchCron) — see fusion-spectra's `PLAN_fusion_wizard.md`.
 - Per-instance values (runner image, resources, tag name, polling) come from a Helm-rendered ConfigMap at run time; precedence: run input > definition default > instance config.
 - `WizardRun.spec.definitionSnapshot` is what runs and rollbacks use — never re-read the live definition mid-run.
 - Ledger: every managed resource is ref-counted. Delete upstream only when the last ref is gone AND `managed: true`. Set `terminating` (resourceVersion-guarded) before deleting; adopters must not adopt a terminating entry. Found-without-ledger resources are `managed: false`, never deleted. Same name + different `specHash` = visible conflict, no silent update.

@@ -244,6 +244,8 @@ type Weave struct {
 	DeleteErr error
 	// CreateHook, if set, runs instead of the normal create and decides its result.
 	CreateHook func(w *Weave, collection string, obj upstream.WeaveObject) error
+	// FireErr, if set, makes every Fire fail with it.
+	FireErr error
 }
 
 func NewWeave(log *EventLog) *Weave {
@@ -284,6 +286,16 @@ func (w *Weave) Delete(_ context.Context, collection, name string) error {
 	}
 	delete(w.Objs, collection+"/"+name)
 	w.log.Add("delete weave/%s/%s", collection, name)
+	return nil
+}
+
+func (w *Weave) Fire(_ context.Context, name string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.FireErr != nil {
+		return w.FireErr
+	}
+	w.log.Add("fire weave/triggers/%s", name)
 	return nil
 }
 
