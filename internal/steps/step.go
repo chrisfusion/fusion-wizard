@@ -22,12 +22,13 @@ import (
 
 // Resource kinds as recorded in the ledger and in run status.
 const (
-	KindGitWatcher  = "gitwatcher"
-	KindArtifact    = "artifact"
-	KindTag         = "tag"
-	KindJobTemplate = "jobtemplate"
-	KindChain       = "chain"
-	KindTrigger     = "trigger"
+	KindGitWatcher   = "gitwatcher"
+	KindArtifact     = "artifact"
+	KindTag          = "tag"
+	KindJobTemplate  = "jobtemplate"
+	KindChain        = "chain"
+	KindTrigger      = "trigger"
+	KindBatchTrigger = "batchtrigger"
 )
 
 // retryTerminating is how soon a step retries when the resource it wants is still being deleted
@@ -56,6 +57,9 @@ type (
 		Create(ctx context.Context, collection string, obj upstream.WeaveObject) (upstream.WeaveObject, error)
 		Delete(ctx context.Context, collection, name string) error
 		Fire(ctx context.Context, name string) error
+		PatchLabels(ctx context.Context, name string, labels map[string]string) error
+		CreateBatchTrigger(ctx context.Context, name, chain, jobs string) error
+		DeleteBatchTrigger(ctx context.Context, name string) error
 	}
 )
 

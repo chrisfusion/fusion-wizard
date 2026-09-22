@@ -246,6 +246,9 @@ type Weave struct {
 	CreateHook func(w *Weave, collection string, obj upstream.WeaveObject) error
 	// FireErr, if set, makes every Fire fail with it.
 	FireErr error
+	// CreateBatchTriggerErr / PatchLabelsErr, if set, make every such call fail with it.
+	CreateBatchTriggerErr error
+	PatchLabelsErr        error
 }
 
 func NewWeave(log *EventLog) *Weave {
@@ -296,6 +299,57 @@ func (w *Weave) Fire(_ context.Context, name string) error {
 		return w.FireErr
 	}
 	w.log.Add("fire weave/triggers/%s", name)
+	return nil
+}
+
+// CreateBatchTrigger fakes weave's dedicated /batchtriggers endpoint: the resulting object is
+// stored under the same "triggers/<name>" key a generic Get(triggers, name) looks up, matching
+// real weave (a BatchCron trigger is still a WeaveTrigger, just created through a different path).
+func (w *Weave) CreateBatchTrigger(_ context.Context, name, chain, jobs string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.CreateBatchTriggerErr != nil {
+		return w.CreateBatchTriggerErr
+	}
+	key := "triggers/" + name
+	if _, ok := w.Objs[key]; ok {
+		return APIErr(409)
+	}
+	w.Objs[key] = upstream.NewWeaveObject("WeaveTrigger", name, map[string]any{
+		"type": "BatchCron", "chainRef": map[string]any{"name": chain}, "jobs": jobs,
+	})
+	w.log.Add("create weave/%s", key)
+	return nil
+}
+
+func (w *Weave) DeleteBatchTrigger(_ context.Context, name string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.DeleteErr != nil {
+		return w.DeleteErr
+	}
+	delete(w.Objs, "triggers/"+name)
+	w.log.Add("delete weave/triggers/%s", name)
+	return nil
+}
+
+func (w *Weave) PatchLabels(_ context.Context, name string, labels map[string]string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.PatchLabelsErr != nil {
+		return w.PatchLabelsErr
+	}
+	obj, ok := w.Objs["triggers/"+name]
+	if !ok {
+		return APIErr(404)
+	}
+	meta, _ := obj["metadata"].(map[string]any)
+	if meta == nil {
+		meta = map[string]any{}
+		obj["metadata"] = meta
+	}
+	meta["labels"] = labels
+	w.log.Add("label weave/triggers/%s", name)
 	return nil
 }
 

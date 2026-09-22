@@ -540,6 +540,74 @@ func TestTriggerReuseRequiresIdenticalSettings(t *testing.T) {
 	}
 }
 
+// ---- batchTrigger ----
+
+func TestBatchTriggerCreatesAndLabels(t *testing.T) {
+	r := newRig(t)
+	res := r.mustDone(t, wizardv1.StepBatchTrigger, "run-a", "batch", map[string]string{
+		"name": "bt", "chain": "ch", "jobs": "- cron: \"0 9 * * *\"\n  params: {A: \"1\"}",
+	})
+	obj := r.weave.Objs["triggers/bt"]
+	spec := obj["spec"].(map[string]any)
+	if spec["type"] != "BatchCron" || spec["chainRef"].(map[string]any)["name"] != "ch" {
+		t.Errorf("spec = %v", spec)
+	}
+	meta := obj["metadata"].(map[string]any)
+	labels, _ := meta["labels"].(map[string]string)
+	if labels[ledger.LabelManagedBy] != ledger.ManagedByWizard || labels[ledger.LabelRun] != "run-a" {
+		t.Errorf("labels = %v", labels)
+	}
+	if res.Resources[0].Disposition != wizardv1.DispositionCreated {
+		t.Errorf("disposition = %v", res.Resources[0].Disposition)
+	}
+}
+
+func TestBatchTriggerAdoptDoesNotRelabelOrRecreate(t *testing.T) {
+	r := newRig(t)
+	p := map[string]string{"name": "bt", "chain": "ch", "jobs": "jobs-text"}
+	r.mustDone(t, wizardv1.StepBatchTrigger, "run-a", "batch", p)
+	if n := r.log.Count("create weave/triggers/bt"); n != 1 {
+		t.Fatalf("create count = %d", n)
+	}
+	res := r.mustDone(t, wizardv1.StepBatchTrigger, "run-b", "batch", p)
+	if res.Resources[0].Disposition != wizardv1.DispositionAdopted {
+		t.Errorf("disposition = %v", res.Resources[0].Disposition)
+	}
+	if n := r.log.Count("create weave/triggers/bt"); n != 1 {
+		t.Errorf("create count after adopt = %d, want still 1", n)
+	}
+}
+
+func TestBatchTriggerConflictOnDifferentChain(t *testing.T) {
+	r := newRig(t)
+	r.weave.Seed("triggers", "bt", map[string]any{"type": "BatchCron", "chainRef": map[string]any{"name": "ch"}})
+	if _, err := r.ensure(t, wizardv1.StepBatchTrigger, "run-a", "batch", map[string]string{
+		"name": "bt", "chain": "other", "jobs": "x",
+	}); !IsPermanent(err) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestBatchTriggerDeleteUsesDedicatedEndpoint(t *testing.T) {
+	r := newRig(t)
+	p := map[string]string{"name": "bt", "chain": "ch", "jobs": "x"}
+	r.mustDone(t, wizardv1.StepBatchTrigger, "run-a", "batch", p)
+
+	key := ledger.Key{Service: wizardv1.ServiceWeave, Kind: KindBatchTrigger, Name: "bt"}
+	if _, _, err := r.led.Release(context.Background(), key, wizardv1.ResourceReference{Run: "run-a", Step: "batch"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.env.Rollback(context.Background(), "run-a"); err != nil {
+		t.Fatal(err)
+	}
+	if r.weave.Has("triggers", "bt") {
+		t.Error("batch trigger must be gone after rollback")
+	}
+	if n := r.log.Count("delete weave/triggers/bt"); n != 1 {
+		t.Errorf("delete count = %d, want 1", n)
+	}
+}
+
 // ---- ledger interplay ----
 
 func TestEnsureWaitsWhileAPreviousOwnerIsDeleting(t *testing.T) {

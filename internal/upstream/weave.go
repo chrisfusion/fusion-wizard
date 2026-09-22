@@ -14,9 +14,10 @@ const WeaveAPIVersion = "weave.fusion-platform.io/v1alpha1"
 
 // Weave REST collection names (path segments under /api/v1).
 const (
-	WeaveJobTemplates = "jobtemplates"
-	WeaveChains       = "chains"
-	WeaveTriggers     = "triggers"
+	WeaveJobTemplates  = "jobtemplates"
+	WeaveChains        = "chains"
+	WeaveTriggers      = "triggers"
+	weaveBatchTriggers = "batchtriggers"
 )
 
 // WeaveObject is a weave custom resource as generic JSON. The wizard treats weave specs as
@@ -77,4 +78,26 @@ func (w *WeaveClient) Delete(ctx context.Context, collection, name string) error
 func (w *WeaveClient) Fire(ctx context.Context, name string) error {
 	patch := WeaveObject{"metadata": map[string]any{"annotations": map[string]any{"fusion-platform.io/fire": "true"}}}
 	return w.c.do(ctx, http.MethodPatch, weavePath(WeaveTriggers, name), nil, patch, nil)
+}
+
+// PatchLabels merge-patches metadata.labels on any WeaveTrigger, regardless of how it was created —
+// used to stamp the wizard's managed-by labels on a BatchCron trigger, whose own create endpoint
+// (CreateBatchTrigger) has no labels field of its own.
+func (w *WeaveClient) PatchLabels(ctx context.Context, name string, labels map[string]string) error {
+	patch := WeaveObject{"metadata": map[string]any{"labels": labels}}
+	return w.c.do(ctx, http.MethodPatch, weavePath(WeaveTriggers, name), nil, patch, nil)
+}
+
+// CreateBatchTrigger creates a BatchCron WeaveTrigger through weave's dedicated endpoint, which also
+// provisions the backing jobs ConfigMap from the raw jobs text (YAML or JSON, weave's own concern to
+// parse and validate — a malformed blob fails with weave's own error message).
+func (w *WeaveClient) CreateBatchTrigger(ctx context.Context, name, chain, jobs string) error {
+	body := map[string]any{"name": name, "chainRef": map[string]any{"name": chain}, "jobs": jobs}
+	return w.c.do(ctx, http.MethodPost, weavePath(weaveBatchTriggers, ""), nil, body, nil)
+}
+
+// DeleteBatchTrigger deletes a BatchCron trigger through its dedicated endpoint (cleans up the jobs
+// ConfigMap too). Idempotent: a missing resource is not an error.
+func (w *WeaveClient) DeleteBatchTrigger(ctx context.Context, name string) error {
+	return ignoreNotFound(w.c.do(ctx, http.MethodDelete, weavePath(weaveBatchTriggers, name), nil, nil, nil))
 }

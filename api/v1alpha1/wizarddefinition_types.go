@@ -11,7 +11,7 @@ import (
 // StepType names one entry of the step catalogue implemented in internal/steps.
 // The catalogue has a fixed order (the order of the constants below); a definition
 // selects a subset of it and must list its steps in that order.
-// +kubebuilder:validation:Enum=gitWatcher;waitBuild;tag;jobTemplate;chain;trigger
+// +kubebuilder:validation:Enum=gitWatcher;waitBuild;tag;jobTemplate;chain;trigger;batchTrigger
 type StepType string
 
 const (
@@ -27,6 +27,10 @@ const (
 	StepChain StepType = "chain"
 	// StepTrigger ensures one or more WeaveTriggers for the chain (supports forEach).
 	StepTrigger StepType = "trigger"
+	// StepBatchTrigger ensures a single BatchCron WeaveTrigger (many cron-scheduled job entries),
+	// created through weave's dedicated /batchtriggers endpoint since the generic trigger endpoint
+	// cannot accept an inline job list. Never combined with StepTrigger in the same definition.
+	StepBatchTrigger StepType = "batchTrigger"
 )
 
 // ParameterType is the value type of a wizard parameter.

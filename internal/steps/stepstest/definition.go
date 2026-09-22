@@ -65,3 +65,32 @@ func BatchJob() *wizardv1.WizardDefinitionSpec {
 		},
 	}
 }
+
+// BatchCronJob returns a fresh copy of the reference definition: spectra's "Git BatchCron Job"
+// wizard (watcher, build, tag, template, chain, one BatchCron trigger — no fireOnCreate, since
+// BatchCron entries each start on their own internal schedule).
+func BatchCronJob() *wizardv1.WizardDefinitionSpec {
+	return &wizardv1.WizardDefinitionSpec{
+		Description: "Build a job and wire up a BatchCron trigger from a pasted list of many cron-scheduled entries",
+		Parameters: []wizardv1.WizardParameter{
+			{Name: "jobName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Shared Kubernetes name for the watcher, chain, and job blueprint"},
+			{Name: "repoUrl", Required: true, Description: "Public HTTP(S) git URL"},
+			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}, Description: "Branch or tag to watch"},
+			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
+			{Name: "jobs", Required: true, Description: "YAML or JSON list of {cron, params} entries — validated by weave at creation time"},
+		},
+		Steps: []wizardv1.WizardStep{
+			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
+				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}"}},
+			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
+			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
+				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",
+				"version": "${steps.build.outputs.version}", "tag": "${config.tagName}"}},
+			{Name: "template", Type: wizardv1.StepJobTemplate, Params: map[string]string{
+				"name": "${params.jobName}", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}", "image": "${config.runnerImage}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}"}},
+			{Name: "trigger", Type: wizardv1.StepBatchTrigger, Params: map[string]string{
+				"name": "${params.jobName}", "chain": "${steps.chain.outputs.name}", "jobs": "${params.jobs}"}},
+		},
+	}
+}

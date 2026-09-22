@@ -108,3 +108,5 @@ definitions:
     enabled: true
   batchGitJob:
     enabled: true
+  batchCronGitJob:
+    enabled: true

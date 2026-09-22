@@ -181,6 +181,7 @@ spec:
                           - jobTemplate
                           - chain
                           - trigger
+                          - batchTrigger
                           type: string
                       required:
                       - name
@@ -405,6 +406,7 @@ spec:
                       - jobTemplate
                       - chain
                       - trigger
+                      - batchTrigger
                       type: string
                   required:
                   - key
