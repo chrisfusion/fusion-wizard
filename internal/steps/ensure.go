@@ -196,7 +196,7 @@ func (e *Env) deleteUpstream(ctx context.Context, s wizardv1.WizardResourceSpec)
 			return permanentf("tag %q has no valid artifact ID recorded", s.Name)
 		}
 		return e.Index.DeleteTag(ctx, id, s.Name[i+1:])
-	case s.Service == wizardv1.ServiceWeave && (s.Kind == KindJobTemplate || s.Kind == KindChain || s.Kind == KindTrigger):
+	case s.Service == wizardv1.ServiceWeave && (s.Kind == KindJobTemplate || s.Kind == KindServiceTemplate || s.Kind == KindChain || s.Kind == KindTrigger):
 		return e.Weave.Delete(ctx, weaveCollection(s.Kind), s.Name)
 	case s.Service == wizardv1.ServiceWeave && s.Kind == KindBatchTrigger:
 		return e.Weave.DeleteBatchTrigger(ctx, s.Name)
@@ -208,6 +208,8 @@ func weaveCollection(kind string) string {
 	switch kind {
 	case KindJobTemplate:
 		return upstream.WeaveJobTemplates
+	case KindServiceTemplate:
+		return upstream.WeaveServiceTemplates
 	case KindChain:
 		return upstream.WeaveChains
 	default:

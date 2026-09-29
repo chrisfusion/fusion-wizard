@@ -131,6 +131,7 @@ spec:
                       - waitBuild
                       - tag
                       - jobTemplate
+                      - serviceTemplate
                       - chain
                       - trigger
                       - batchTrigger

@@ -22,13 +22,14 @@ import (
 
 // Resource kinds as recorded in the ledger and in run status.
 const (
-	KindGitWatcher   = "gitwatcher"
-	KindArtifact     = "artifact"
-	KindTag          = "tag"
-	KindJobTemplate  = "jobtemplate"
-	KindChain        = "chain"
-	KindTrigger      = "trigger"
-	KindBatchTrigger = "batchtrigger"
+	KindGitWatcher      = "gitwatcher"
+	KindArtifact        = "artifact"
+	KindTag             = "tag"
+	KindJobTemplate     = "jobtemplate"
+	KindServiceTemplate = "servicetemplate"
+	KindChain           = "chain"
+	KindTrigger         = "trigger"
+	KindBatchTrigger    = "batchtrigger"
 )
 
 // retryTerminating is how soon a step retries when the resource it wants is still being deleted

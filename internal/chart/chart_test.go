@@ -169,6 +169,29 @@ func TestBatchCronJobDefinitionIsValidAndMatchesTheCode(t *testing.T) {
 	}
 }
 
+func TestPythonServiceDefinitionIsValidAndMatchesTheCode(t *testing.T) {
+	def := reroundtrip[wizardv1.WizardDefinition](t, find(t, mustRender(t, goodArgs...), "WizardDefinition", "python-git-service"))
+
+	if err := steps.ValidateDefinition(&def.Spec); err != nil {
+		t.Fatalf("the shipped definition is invalid: %v", err)
+	}
+	if want := stepstest.PythonService(); !equality.Semantic.DeepEqual(def.Spec, *want) {
+		got, _ := yaml.Marshal(def.Spec)
+		exp, _ := yaml.Marshal(want)
+		t.Errorf("chart definition differs from stepstest.PythonService\n--- chart ---\n%s\n--- code ---\n%s", got, exp)
+	}
+	if def.Namespace != namespace {
+		t.Errorf("definition namespace = %q", def.Namespace)
+	}
+
+	objs := mustRender(t, append([]string{"--set", "definitions.pythonGitService.enabled=false"}, goodArgs...)...)
+	for _, o := range objs {
+		if o.kind() == "WizardDefinition" && o.name() == "python-git-service" {
+			t.Error("the definition must be switchable off")
+		}
+	}
+}
+
 func TestInstanceConfigParsesWithTheRealLoader(t *testing.T) {
 	cm := find(t, mustRender(t, goodArgs...), "ConfigMap", "rel-config")
 	data := map[string]string{}

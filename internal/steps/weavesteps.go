@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -115,6 +116,99 @@ func (jobTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Result, 
 		}, nil, map[string]string{"name": name})
 }
 
+// ---- serviceTemplate ----
+
+type serviceTemplateStep struct{}
+
+func (serviceTemplateStep) Type() wizardv1.StepType { return wizardv1.StepServiceTemplate }
+func (serviceTemplateStep) Outputs() []string       { return []string{"name"} }
+func (serviceTemplateStep) Params() ParamSpec {
+	return ParamSpec{Required: []string{"name", "artifactName", "tag", "port"}, Optional: []string{"image", "ingressName"}}
+}
+
+// servicePortName is the WeaveServiceTemplate port's own name, referenced by an ingress rule's
+// servicePort. The wizard exposes exactly one port per service, so a fixed name is enough.
+const servicePortName = "http"
+
+// Ensure creates a WeaveServiceTemplate that runs the built artifact as a long-running service
+// (e.g. a Streamlit app), instead of a one-shot Job. Unlike jobTemplate, the port and ingress name
+// are part of the template's identity alongside the artifact and tag: they change what the service
+// actually exposes, not just an instance default like the runner image.
+func (serviceTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
+	name, artifactName, tag := in.Params["name"], in.Params["artifactName"], in.Params["tag"]
+	portStr, ingressName := in.Params["port"], in.Params["ingressName"]
+	image := firstNonEmpty(in.Params["image"], env.Cfg.RunnerImage)
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return Result{}, permanentf("port %q is not a whole number", portStr)
+	}
+
+	spec := map[string]any{
+		"image":      image,
+		"codeSource": map[string]any{"artifactName": artifactName, "tag": tag},
+		"ports":      []any{map[string]any{"name": servicePortName, "port": port}},
+	}
+	res, err := resourcesMap(env.Cfg.DefaultResources)
+	if err != nil {
+		return Result{}, err
+	}
+	if res != nil {
+		spec["resources"] = res
+	}
+	if ingressName != "" {
+		spec["ingress"] = map[string]any{"rules": []any{map[string]any{"name": ingressName, "servicePort": servicePortName}}}
+	}
+
+	return env.weaveResource(ctx, in, KindServiceTemplate, name,
+		ledger.Hash(KindServiceTemplate, artifactName, tag, portStr, ingressName),
+		upstream.NewWeaveObject("WeaveServiceTemplate", name, spec),
+		func(existing map[string]any) string {
+			switch {
+			case nestedString(existing, "codeSource", "artifactName") != artifactName || nestedString(existing, "codeSource", "tag") != tag:
+				return "it runs a different artifact or tag"
+			case existingPort(existing) != portStr:
+				return "it exposes a different port"
+			case existingIngressName(existing) != ingressName:
+				return "it has a different ingress"
+			}
+			return ""
+		}, nil, map[string]string{"name": name})
+}
+
+// existingPort reads the first port's number back out of a weave-returned spec, as a string so it
+// compares directly against the resolved param (JSON numbers decode as float64).
+func existingPort(spec map[string]any) string {
+	ports, _ := nested(spec, "ports").([]any)
+	if len(ports) == 0 {
+		return ""
+	}
+	m, ok := ports[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	switch v := m["port"].(type) {
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+func existingIngressName(spec map[string]any) string {
+	rules, _ := nested(spec, "ingress", "rules").([]any)
+	if len(rules) == 0 {
+		return ""
+	}
+	m, ok := rules[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return nestedString(m, "name")
+}
+
 // ---- chain ----
 
 type chainStep struct{}
@@ -122,29 +216,46 @@ type chainStep struct{}
 func (chainStep) Type() wizardv1.StepType { return wizardv1.StepChain }
 func (chainStep) Outputs() []string       { return []string{"name"} }
 func (chainStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "jobTemplate"}, Optional: []string{"stepName"}}
+	return ParamSpec{Required: []string{"name"}, Optional: []string{"jobTemplate", "serviceTemplate", "stepName"}}
 }
 
-// Ensure creates a WeaveChain with one Job step that references the job template.
+// Ensure creates a WeaveChain with one step referencing either the job template (a one-shot Job,
+// fired by a trigger) or the service template (a long-running Deploy, also fired once by a trigger
+// but then owned by the chain itself, outliving the WeaveRun that created it). Exactly one of the
+// two must be given.
 func (chainStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
-	name, template := in.Params["name"], in.Params["jobTemplate"]
+	name := in.Params["name"]
+	jobTemplate, serviceTemplate := in.Params["jobTemplate"], in.Params["serviceTemplate"]
 	stepName := firstNonEmpty(in.Params["stepName"], env.Cfg.ChainStepName)
 
-	spec := map[string]any{"steps": []any{map[string]any{
-		"name":           stepName,
-		"stepKind":       "Job",
-		"jobTemplateRef": map[string]any{"name": template},
-	}}}
-	return env.weaveResource(ctx, in, KindChain, name, ledger.Hash(KindChain, template, stepName),
+	var template, ref, stepKind string
+	switch {
+	case jobTemplate != "" && serviceTemplate != "":
+		return Result{}, permanentf("chain step %q cannot have both jobTemplate and serviceTemplate", name)
+	case jobTemplate != "":
+		template, ref, stepKind = jobTemplate, "jobTemplateRef", "Job"
+	case serviceTemplate != "":
+		template, ref, stepKind = serviceTemplate, "serviceTemplateRef", "Deploy"
+	default:
+		return Result{}, permanentf("chain step %q needs either jobTemplate or serviceTemplate", name)
+	}
+
+	chainStepSpec := map[string]any{"name": stepName, "stepKind": stepKind, ref: map[string]any{"name": template}}
+	if stepKind == "Deploy" {
+		chainStepSpec["runOnSuccess"] = true
+	}
+
+	spec := map[string]any{"steps": []any{chainStepSpec}}
+	return env.weaveResource(ctx, in, KindChain, name, ledger.Hash(KindChain, ref, template, stepName),
 		upstream.NewWeaveObject("WeaveChain", name, spec),
 		func(existing map[string]any) string {
 			steps, _ := nested(existing, "steps").([]any)
 			for _, s := range steps {
-				if m, ok := s.(map[string]any); ok && nestedString(m, "jobTemplateRef", "name") == template {
+				if m, ok := s.(map[string]any); ok && nestedString(m, ref, "name") == template {
 					return ""
 				}
 			}
-			return "it does not run this job template"
+			return "it does not run this template"
 		}, nil, map[string]string{"name": name})
 }
 

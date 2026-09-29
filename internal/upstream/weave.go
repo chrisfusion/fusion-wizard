@@ -14,10 +14,11 @@ const WeaveAPIVersion = "weave.fusion-platform.io/v1alpha1"
 
 // Weave REST collection names (path segments under /api/v1).
 const (
-	WeaveJobTemplates  = "jobtemplates"
-	WeaveChains        = "chains"
-	WeaveTriggers      = "triggers"
-	weaveBatchTriggers = "batchtriggers"
+	WeaveJobTemplates     = "jobtemplates"
+	WeaveServiceTemplates = "servicetemplates"
+	WeaveChains           = "chains"
+	WeaveTriggers         = "triggers"
+	weaveBatchTriggers    = "batchtriggers"
 )
 
 // WeaveObject is a weave custom resource as generic JSON. The wizard treats weave specs as

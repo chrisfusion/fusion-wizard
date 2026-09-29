@@ -11,7 +11,7 @@ import (
 // StepType names one entry of the step catalogue implemented in internal/steps.
 // The catalogue has a fixed order (the order of the constants below); a definition
 // selects a subset of it and must list its steps in that order.
-// +kubebuilder:validation:Enum=gitWatcher;waitBuild;tag;jobTemplate;chain;trigger;batchTrigger
+// +kubebuilder:validation:Enum=gitWatcher;waitBuild;tag;jobTemplate;serviceTemplate;chain;trigger;batchTrigger
 type StepType string
 
 const (
@@ -23,7 +23,11 @@ const (
 	StepTag StepType = "tag"
 	// StepJobTemplate ensures a WeaveJobTemplate that runs the built artifact.
 	StepJobTemplate StepType = "jobTemplate"
-	// StepChain ensures a WeaveChain that references the job template.
+	// StepServiceTemplate ensures a WeaveServiceTemplate that runs the built artifact as a
+	// long-running service (e.g. a Streamlit app), instead of a one-shot Job. Mutually exclusive
+	// with StepJobTemplate within one definition - the chain step references whichever one ran.
+	StepServiceTemplate StepType = "serviceTemplate"
+	// StepChain ensures a WeaveChain that references the job template or the service template.
 	StepChain StepType = "chain"
 	// StepTrigger ensures one or more WeaveTriggers for the chain (supports forEach).
 	StepTrigger StepType = "trigger"

@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# A long-running Python service (e.g. a Streamlit app) built from a Git repository, in catalogue
+# form: watch a repository, wait for forge's build, tag it, create a service template and a
+# Deploy-kind chain, and fire one OnDemand trigger immediately. Unlike python-git-job there is
+# exactly one running process, not one trigger per entrypoint file - ENTRYPOINT for a service comes
+# from the app's own metadata.yaml, not a per-run override. Instance-specific values (runner image,
+# tag name, ...) are ${config.x} references, resolved from the instance ConfigMap.
+# Keep in step with stepstest.PythonService (internal/chart/chart_test.go enforces it).
+{{- if ((.Values.definitions | default dict).pythonGitService | default dict).enabled }}
+apiVersion: wizard.fusion-platform.io/v1alpha1
+kind: WizardDefinition
+metadata:
+  name: python-git-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+spec:
+  description: "Build a long-running Python service (e.g. a Streamlit app) from a Git repository"
+  parameters:
+    - name: serviceName
+      required: true
+      pattern: "^[a-z0-9-]+$"
+    - name: repoUrl
+      required: true
+    - name: repoRef
+      default: "main"
+    - name: projectDir
+      default: ""
+      description: "Relative path containing metadata.yaml (optional)"
+    - name: port
+      type: number
+      default: 8501
+      description: "Port the service listens on (Streamlit's default is 8501)"
+    - name: ingressName
+      default: ""
+      description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)"
+  steps:
+    - name: watcher
+      type: gitWatcher
+      params:
+        name: "${params.serviceName}"
+        repoUrl: "${params.repoUrl}"
+        repoRef: "${params.repoRef}"
+        projectDir: "${params.projectDir}"
+    - name: build
+      type: waitBuild
+      params:
+        watcher: "${steps.watcher.outputs.name}"
+    - name: tag
+      type: tag
+      params:
+        artifactId: "${steps.build.outputs.artifactId}"
+        artifactName: "${steps.build.outputs.artifactName}"
+        version: "${steps.build.outputs.version}"
+        tag: "${config.tagName}"
+    - name: template
+      type: serviceTemplate
+      params:
+        name: "${params.serviceName}"
+        artifactName: "${steps.build.outputs.artifactName}"
+        tag: "${steps.tag.outputs.tag}"
+        image: "${config.runnerImage}"
+        port: "${params.port}"
+        ingressName: "${params.ingressName}"
+    - name: chain
+      type: chain
+      params:
+        name: "${params.serviceName}"
+        serviceTemplate: "${steps.template.outputs.name}"
+    - name: trigger
+      type: trigger
+      params:
+        name: "${params.serviceName}"
+        chain: "${steps.chain.outputs.name}"
+        type: "OnDemand"
+        fireOnCreate: "true"
+{{- end }}

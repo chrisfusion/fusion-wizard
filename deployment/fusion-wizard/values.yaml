@@ -110,3 +110,5 @@ definitions:
     enabled: true
   batchCronGitJob:
     enabled: true
+  pythonGitService:
+    enabled: true

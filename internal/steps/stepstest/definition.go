@@ -40,6 +40,39 @@ func PythonJob() *wizardv1.WizardDefinitionSpec {
 	}
 }
 
+// PythonService returns a fresh copy of the reference definition: a long-running Python service
+// (e.g. a Streamlit app) built from a Git repository (watcher, build, tag, service template, a
+// Deploy-kind chain, one OnDemand trigger fired immediately on creation). Unlike PythonJob, there
+// is exactly one running process, not one trigger per entrypoint file - ENTRYPOINT for a service
+// comes from the app's own metadata.yaml, not a per-run override.
+func PythonService() *wizardv1.WizardDefinitionSpec {
+	return &wizardv1.WizardDefinitionSpec{
+		Description: "Build a long-running Python service (e.g. a Streamlit app) from a Git repository",
+		Parameters: []wizardv1.WizardParameter{
+			{Name: "serviceName", Required: true, Pattern: `^[a-z0-9-]+$`},
+			{Name: "repoUrl", Required: true},
+			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}},
+			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
+			{Name: "port", Type: wizardv1.ParameterNumber, Default: &apiextensionsv1.JSON{Raw: []byte(`8501`)}, Description: "Port the service listens on (Streamlit's default is 8501)"},
+			{Name: "ingressName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)"},
+		},
+		Steps: []wizardv1.WizardStep{
+			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
+				"name": "${params.serviceName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}"}},
+			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
+			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
+				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",
+				"version": "${steps.build.outputs.version}", "tag": "${config.tagName}"}},
+			{Name: "template", Type: wizardv1.StepServiceTemplate, Params: map[string]string{
+				"name": "${params.serviceName}", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}",
+				"image": "${config.runnerImage}", "port": "${params.port}", "ingressName": "${params.ingressName}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.serviceName}", "serviceTemplate": "${steps.template.outputs.name}"}},
+			{Name: "trigger", Type: wizardv1.StepTrigger, Params: map[string]string{
+				"name": "${params.serviceName}", "chain": "${steps.chain.outputs.name}", "type": "OnDemand", "fireOnCreate": "true"}},
+		},
+	}
+}
+
 // BatchJob returns a fresh copy of the reference definition: spectra's "Git Batch Job" wizard
 // (watcher, build, tag, template, chain, one trigger fired immediately on creation).
 func BatchJob() *wizardv1.WizardDefinitionSpec {

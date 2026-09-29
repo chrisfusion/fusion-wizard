@@ -180,6 +180,7 @@ spec:
                           - waitBuild
                           - tag
                           - jobTemplate
+                          - serviceTemplate
                           - chain
                           - trigger
                           - batchTrigger
@@ -405,6 +406,7 @@ spec:
                       - waitBuild
                       - tag
                       - jobTemplate
+                      - serviceTemplate
                       - chain
                       - trigger
                       - batchTrigger
