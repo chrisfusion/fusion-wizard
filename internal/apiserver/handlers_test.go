@@ -75,6 +75,15 @@ func TestCreateRun(t *testing.T) {
 	}
 }
 
+func TestCreateRunAcceptsExternalAuth(t *testing.T) {
+	h := newHarness(t)
+	h.seedPythonJob()
+	rec := h.do(http.MethodPost, "/api/v1/runs", nightly(map[string]any{
+		"externalAuthMode": "serviceAccount", "externalAuthName": "sa",
+		"externalAuthOverrideMode": "oidc", "externalAuthOverrideName": "kc"}))
+	expect(t, rec, http.StatusCreated)
+}
+
 func TestCreateRunWithExplicitName(t *testing.T) {
 	h := newHarness(t)
 	h.seedPythonJob()
@@ -120,6 +129,9 @@ func TestCreateRunValidation(t *testing.T) {
 		{"wrong type", nightly(map[string]any{"entrypoints": "main.py"}), 422, "expected a list of objects"},
 		{"pattern violation", nightly(map[string]any{"jobName": "Nightly Job"}), 422, "does not match pattern"},
 		{"duplicate forEach items", nightly(map[string]any{"entrypoints": entrypointEntries("a.py", "a.py")}), 422, "is used twice"},
+		{"half-set externalAuth", nightly(map[string]any{"externalAuthMode": "oidc"}), 422, "externalAuthMode and externalAuthName must be set together"},
+		{"half-set externalAuth override", nightly(map[string]any{"externalAuthOverrideName": "x"}), 422, "externalAuthOverrideMode and externalAuthOverrideName must be set together"},
+		{"unknown externalAuth mode", nightly(map[string]any{"externalAuthMode": "basic", "externalAuthName": "x"}), 422, "is not supported"},
 		{"empty forEach item", nightly(map[string]any{"entrypoints": []map[string]any{{"key": "", "type": "OnDemand", "schedule": ""}}}), 422, ""},
 	}
 	for _, c := range cases {

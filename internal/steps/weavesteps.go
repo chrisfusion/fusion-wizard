@@ -380,6 +380,21 @@ func externalAuthFromParams(params map[string]string, modeKey, nameKey string) (
 	return map[string]any{"mode": mode, "name": name}, nil
 }
 
+// ValidateExternalAuthParams checks the externalAuth params of a chain or trigger step (any other
+// step type, or params without them, pass). Params that are already resolved are enough, so the API
+// can reject a half-set pair at run creation instead of after the build steps have run.
+func ValidateExternalAuthParams(typ wizardv1.StepType, params map[string]string) error {
+	switch typ {
+	case wizardv1.StepChain:
+		_, err := externalAuthFromParams(params, "externalAuthMode", "externalAuthName")
+		return err
+	case wizardv1.StepTrigger:
+		_, err := externalAuthFromParams(params, "externalAuthOverrideMode", "externalAuthOverrideName")
+		return err
+	}
+	return nil
+}
+
 // authRefKey is the comparable identity of an externalAuthRef ("" when absent).
 func authRefKey(ref map[string]any) string {
 	if ref == nil {

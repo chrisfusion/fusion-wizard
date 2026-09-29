@@ -6,9 +6,12 @@ package apiserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -99,7 +102,10 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	values, err := params.ResolveParameters(def.Spec.Parameters, supplied)
 	if err == nil {
-		_, err = plan.Expand(&def.Spec, values) // e.g. duplicate forEach items
+		var instances []plan.Instance
+		if instances, err = plan.Expand(&def.Spec, values); err == nil { // e.g. duplicate forEach items
+			err = validateExternalAuth(instances, values)
+		}
 	}
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "invalid parameters", errorDetails(err)...)
@@ -370,4 +376,31 @@ func (s *Server) requestRollback(ctx context.Context, run *wizardv1.WizardRun) e
 	patch := client.MergeFrom(run.DeepCopy())
 	run.Spec.DesiredState = wizardv1.DesiredRolledBack
 	return s.client.Patch(ctx, run, patch)
+}
+
+// validateExternalAuth rejects a half-set or unknown externalAuth pair up front. Only params that
+// resolve from run parameters and forEach items are checked; ones that depend on earlier step
+// outputs are left to the step itself.
+func validateExternalAuth(instances []plan.Instance, values map[string]any) error {
+	var errs []error
+	for _, in := range instances {
+		pctx := params.Context{Params: values, Item: in.Item, ItemFields: in.ItemFields}
+		resolved, declared := map[string]string{}, 0
+		for k, v := range in.Step.Params {
+			if !strings.HasPrefix(k, "externalAuth") {
+				continue
+			}
+			declared++
+			if r, err := params.Resolve(v, pctx); err == nil {
+				resolved[k] = r
+			}
+		}
+		if len(resolved) < declared {
+			continue // depends on a step output: only known once the step runs
+		}
+		if err := steps.ValidateExternalAuthParams(in.Step.Type, resolved); err != nil {
+			errs = append(errs, fmt.Errorf("step %q: %w", in.Key, err))
+		}
+	}
+	return errors.Join(errs...)
 }
