@@ -31,6 +31,12 @@ spec:
     - name: jobs
       required: true
       description: "YAML or JSON list of {cron, params} entries — validated by weave at creation time"
+    - name: externalAuthMode
+      default: ""
+      description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"
+    - name: externalAuthName
+      default: ""
+      description: "Optional: allowlisted ServiceAccount name or OIDC secret name (see weave's external-auth options)"
   steps:
     - name: watcher
       type: gitWatcher
@@ -62,6 +68,8 @@ spec:
       params:
         name: "${params.jobName}"
         jobTemplate: "${steps.template.outputs.name}"
+        externalAuthMode: "${params.externalAuthMode}"
+        externalAuthName: "${params.externalAuthName}"
     - name: trigger
       type: batchTrigger
       params:

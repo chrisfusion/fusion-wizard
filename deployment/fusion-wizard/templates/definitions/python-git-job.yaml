@@ -28,6 +28,18 @@ spec:
       type: objectList
       required: true
       description: "One entry per entrypoint file: key (filename), type (OnDemand or Cron), schedule (cron expression, Cron only, empty otherwise)"
+    - name: externalAuthMode
+      default: ""
+      description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"
+    - name: externalAuthName
+      default: ""
+      description: "Optional: allowlisted ServiceAccount name or OIDC secret name (see weave's external-auth options)"
+    - name: externalAuthOverrideMode
+      default: ""
+      description: "Optional: serviceAccount or oidc — overrides the chain's token injection for this trigger's runs (set together with externalAuthOverrideName)"
+    - name: externalAuthOverrideName
+      default: ""
+      description: "Optional: allowlisted ServiceAccount or OIDC secret name for the trigger-level override"
   steps:
     - name: watcher
       type: gitWatcher
@@ -59,6 +71,8 @@ spec:
       params:
         name: "${params.jobName}"
         jobTemplate: "${steps.template.outputs.name}"
+        externalAuthMode: "${params.externalAuthMode}"
+        externalAuthName: "${params.externalAuthName}"
     - name: trigger
       type: trigger
       forEach: "${params.entrypoints}"
@@ -68,4 +82,6 @@ spec:
         type: "${item.type}"
         schedule: "${item.schedule}"
         override.ENTRYPOINT: "${item}"
+        externalAuthOverrideMode: "${params.externalAuthOverrideMode}"
+        externalAuthOverrideName: "${params.externalAuthOverrideName}"
 {{- end }}

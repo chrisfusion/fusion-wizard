@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Optional weave `externalAuthRef` (short-lived ServiceAccount or OIDC tokens injected into job pods): `chain` step params `externalAuthMode`/`externalAuthName` set it on the chain, `trigger` step params `externalAuthOverrideMode`/`externalAuthOverrideName` set `externalAuthRefOverride`. Both must be set together or not at all; rejected for service (Deploy) chains. Exposed as optional parameters on `python-git-job` and `batch-git-job` (chain + trigger) and `batchcron-git-job` (chain only)
 - Project scaffold: Go module, Makefile, Dockerfile, GPL-3.0 license, `.gitignore`, `CLAUDE.md`
 - CRDs in `wizard.fusion-platform.io/v1alpha1`: `WizardDefinition`, `WizardRun`, `WizardResource` (ledger) with generated deepcopy code and manifests
 - `internal/params`: `${params.x}` / `${config.x}` / `${steps.s.outputs.k}` / `${item}` templates with `k8sName`, `stem`, `lower` filters, and typed parameter resolution (defaults, required, patterns)

@@ -350,7 +350,7 @@ func TestDefinitions(t *testing.T) {
 	if items[0].Valid || items[0].Error == "" {
 		t.Errorf("a broken definition must be flagged with a reason: %+v", items[0])
 	}
-	if !items[1].Valid || len(items[1].Spec.Parameters) != 5 {
+	if !items[1].Valid || len(items[1].Spec.Parameters) != 9 {
 		t.Errorf("the good definition must expose its parameter schema: %+v", items[1])
 	}
 

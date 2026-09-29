@@ -216,13 +216,18 @@ type chainStep struct{}
 func (chainStep) Type() wizardv1.StepType { return wizardv1.StepChain }
 func (chainStep) Outputs() []string       { return []string{"name"} }
 func (chainStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name"}, Optional: []string{"jobTemplate", "serviceTemplate", "stepName"}}
+	return ParamSpec{Required: []string{"name"}, Optional: []string{"jobTemplate", "serviceTemplate", "stepName", "externalAuthMode", "externalAuthName"}}
 }
 
 // Ensure creates a WeaveChain with one step referencing either the job template (a one-shot Job,
 // fired by a trigger) or the service template (a long-running Deploy, also fired once by a trigger
 // but then owned by the chain itself, outliving the WeaveRun that created it). Exactly one of the
 // two must be given.
+//
+// externalAuthMode/externalAuthName (both or neither) set the chain's externalAuthRef: weave mints
+// a short-lived token for the named allowlisted ServiceAccount or OIDC secret and injects it into
+// every Job pod. Not offered for a service template: the token would expire under a long-running
+// Deploy.
 func (chainStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name := in.Params["name"]
 	jobTemplate, serviceTemplate := in.Params["jobTemplate"], in.Params["serviceTemplate"]
@@ -240,15 +245,29 @@ func (chainStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error)
 		return Result{}, permanentf("chain step %q needs either jobTemplate or serviceTemplate", name)
 	}
 
+	authRef, err := externalAuthFromParams(in.Params, "externalAuthMode", "externalAuthName")
+	if err != nil {
+		return Result{}, err
+	}
+	if authRef != nil && stepKind == "Deploy" {
+		return Result{}, permanentf("externalAuth is not supported for a service template (its token would expire under a long-running deployment)")
+	}
+
 	chainStepSpec := map[string]any{"name": stepName, "stepKind": stepKind, ref: map[string]any{"name": template}}
 	if stepKind == "Deploy" {
 		chainStepSpec["runOnSuccess"] = true
 	}
 
 	spec := map[string]any{"steps": []any{chainStepSpec}}
-	return env.weaveResource(ctx, in, KindChain, name, ledger.Hash(KindChain, ref, template, stepName),
+	if authRef != nil {
+		spec["externalAuthRef"] = authRef
+	}
+	return env.weaveResource(ctx, in, KindChain, name, ledger.Hash(authHashParts(authRef, KindChain, ref, template, stepName)...),
 		upstream.NewWeaveObject("WeaveChain", name, spec),
 		func(existing map[string]any) string {
+			if existingAuthKey(existing, "externalAuthRef") != authRefKey(authRef) {
+				return "it has a different externalAuthRef"
+			}
 			steps, _ := nested(existing, "steps").([]any)
 			for _, s := range steps {
 				if m, ok := s.(map[string]any); ok && nestedString(m, ref, "name") == template {
@@ -266,7 +285,7 @@ type triggerStep struct{}
 func (triggerStep) Type() wizardv1.StepType { return wizardv1.StepTrigger }
 func (triggerStep) Outputs() []string       { return []string{"name"} }
 func (triggerStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule", "fireOnCreate"}, Prefixes: []string{overridePrefix}}
+	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule", "fireOnCreate", "externalAuthOverrideMode", "externalAuthOverrideName"}, Prefixes: []string{overridePrefix}}
 }
 
 // Ensure creates a WeaveTrigger (OnDemand or Cron) for the chain. Params prefixed "override."
@@ -277,6 +296,9 @@ func (triggerStep) Params() ParamSpec {
 // fireOnCreate: "true" asks weave to fire one run immediately, but only the call that actually
 // creates the trigger does so — adopting or re-confirming an existing one never re-fires it, so a
 // later reconcile of this same step (or a second run sharing the trigger) is a no-op here.
+//
+// externalAuthOverrideMode/externalAuthOverrideName (both or neither) set the trigger's
+// externalAuthRefOverride, which takes precedence over the chain's externalAuthRef.
 func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name, chain := in.Params["name"], in.Params["chain"]
 	typ := firstNonEmpty(in.Params["type"], "OnDemand")
@@ -299,7 +321,15 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 	}
 	pairs := sortedPairs(overrides)
 
+	authRef, err := externalAuthFromParams(in.Params, "externalAuthOverrideMode", "externalAuthOverrideName")
+	if err != nil {
+		return Result{}, err
+	}
+
 	spec := map[string]any{"chainRef": map[string]any{"name": chain}, "type": typ}
+	if authRef != nil {
+		spec["externalAuthRefOverride"] = authRef
+	}
 	if schedule != "" {
 		spec["schedule"] = schedule
 	}
@@ -317,7 +347,7 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 	}
 
 	return env.weaveResource(ctx, in, KindTrigger, name,
-		ledger.Hash(append([]string{KindTrigger, chain, typ, schedule}, pairs...)...),
+		ledger.Hash(authHashParts(authRef, append([]string{KindTrigger, chain, typ, schedule}, pairs...)...)...),
 		upstream.NewWeaveObject("WeaveTrigger", name, spec),
 		func(existing map[string]any) string {
 			switch {
@@ -327,9 +357,53 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 				return "it has a different type or schedule"
 			case strings.Join(existingPairs(existing), "\x00") != strings.Join(pairs, "\x00"):
 				return "it has different parameter overrides"
+			case existingAuthKey(existing, "externalAuthRefOverride") != authRefKey(authRef):
+				return "it has a different externalAuthRefOverride"
 			}
 			return ""
 		}, afterCreate, map[string]string{"name": name})
+}
+
+// externalAuthFromParams reads an optional weave externalAuthRef from two step params. Both empty
+// means "not used" (nil); exactly one set, or a mode other than serviceAccount/oidc, is a permanent
+// error. The name is not checked here: weave validates it against its deploy-time allowlist.
+func externalAuthFromParams(params map[string]string, modeKey, nameKey string) (map[string]any, error) {
+	mode, name := params[modeKey], params[nameKey]
+	switch {
+	case mode == "" && name == "":
+		return nil, nil
+	case mode == "" || name == "":
+		return nil, permanentf("%s and %s must be set together", modeKey, nameKey)
+	case mode != "serviceAccount" && mode != "oidc":
+		return nil, permanentf("%s %q is not supported (use serviceAccount or oidc)", modeKey, mode)
+	}
+	return map[string]any{"mode": mode, "name": name}, nil
+}
+
+// authRefKey is the comparable identity of an externalAuthRef ("" when absent).
+func authRefKey(ref map[string]any) string {
+	if ref == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v/%v", ref["mode"], ref["name"])
+}
+
+// authHashParts appends the externalAuthRef identity to a hash's parts only when one is set, so
+// hashes of resources created before the feature existed (no ref) stay unchanged.
+func authHashParts(ref map[string]any, parts ...string) []string {
+	if ref == nil {
+		return parts
+	}
+	return append(parts, "externalAuth", authRefKey(ref))
+}
+
+// existingAuthKey is authRefKey for the ref found under field on an existing upstream spec.
+func existingAuthKey(spec map[string]any, field string) string {
+	mode, name := nestedString(spec, field, "mode"), nestedString(spec, field, "name")
+	if mode == "" && name == "" {
+		return ""
+	}
+	return mode + "/" + name
 }
 
 func existingPairs(spec map[string]any) []string {

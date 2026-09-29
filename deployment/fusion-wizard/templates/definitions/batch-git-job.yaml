@@ -34,6 +34,18 @@ spec:
     - name: schedule
       default: ""
       description: "Cron schedule for future runs; only used when triggerType is Cron"
+    - name: externalAuthMode
+      default: ""
+      description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"
+    - name: externalAuthName
+      default: ""
+      description: "Optional: allowlisted ServiceAccount name or OIDC secret name (see weave's external-auth options)"
+    - name: externalAuthOverrideMode
+      default: ""
+      description: "Optional: serviceAccount or oidc — overrides the chain's token injection for this trigger's runs (set together with externalAuthOverrideName)"
+    - name: externalAuthOverrideName
+      default: ""
+      description: "Optional: allowlisted ServiceAccount or OIDC secret name for the trigger-level override"
   steps:
     - name: watcher
       type: gitWatcher
@@ -65,6 +77,8 @@ spec:
       params:
         name: "${params.jobName}"
         jobTemplate: "${steps.template.outputs.name}"
+        externalAuthMode: "${params.externalAuthMode}"
+        externalAuthName: "${params.externalAuthName}"
     - name: trigger
       type: trigger
       params:
@@ -73,4 +87,6 @@ spec:
         type: "${params.triggerType}"
         schedule: "${params.schedule}"
         fireOnCreate: "true"
+        externalAuthOverrideMode: "${params.externalAuthOverrideMode}"
+        externalAuthOverrideName: "${params.externalAuthOverrideName}"
 {{- end }}

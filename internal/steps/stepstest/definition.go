@@ -22,6 +22,10 @@ func PythonJob() *wizardv1.WizardDefinitionSpec {
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
 			{Name: "entrypoints", Type: wizardv1.ParameterObjectList, Required: true,
 				Description: "One entry per entrypoint file: key (filename), type (OnDemand or Cron), schedule (cron expression, Cron only, empty otherwise)"},
+			{Name: "externalAuthMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"},
+			{Name: "externalAuthName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: allowlisted ServiceAccount name or OIDC secret name (see weave's external-auth options)"},
+			{Name: "externalAuthOverrideMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — overrides the chain's token injection for this trigger's runs (set together with externalAuthOverrideName)"},
+			{Name: "externalAuthOverrideName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: allowlisted ServiceAccount or OIDC secret name for the trigger-level override"},
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
@@ -32,10 +36,12 @@ func PythonJob() *wizardv1.WizardDefinitionSpec {
 				"version": "${steps.build.outputs.version}", "tag": "${config.tagName}"}},
 			{Name: "template", Type: wizardv1.StepJobTemplate, Params: map[string]string{
 				"name": "${params.jobName}", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}", "image": "${config.runnerImage}"}},
-			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}",
+				"externalAuthMode": "${params.externalAuthMode}", "externalAuthName": "${params.externalAuthName}"}},
 			{Name: "trigger", Type: wizardv1.StepTrigger, ForEach: "${params.entrypoints}", Params: map[string]string{
 				"name": "${params.jobName|k8sName}-${item|stem|k8sName}", "chain": "${steps.chain.outputs.name}",
-				"type": "${item.type}", "schedule": "${item.schedule}", "override.ENTRYPOINT": "${item}"}},
+				"type": "${item.type}", "schedule": "${item.schedule}", "override.ENTRYPOINT": "${item}",
+				"externalAuthOverrideMode": "${params.externalAuthOverrideMode}", "externalAuthOverrideName": "${params.externalAuthOverrideName}"}},
 		},
 	}
 }
@@ -85,6 +91,10 @@ func BatchJob() *wizardv1.WizardDefinitionSpec {
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
 			{Name: "triggerType", Default: &apiextensionsv1.JSON{Raw: []byte(`"OnDemand"`)}, Description: "OnDemand or Cron — the batch always starts once immediately either way"},
 			{Name: "schedule", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Cron schedule for future runs; only used when triggerType is Cron"},
+			{Name: "externalAuthMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"},
+			{Name: "externalAuthName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: allowlisted ServiceAccount name or OIDC secret name (see weave's external-auth options)"},
+			{Name: "externalAuthOverrideMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — overrides the chain's token injection for this trigger's runs (set together with externalAuthOverrideName)"},
+			{Name: "externalAuthOverrideName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: allowlisted ServiceAccount or OIDC secret name for the trigger-level override"},
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
@@ -95,10 +105,12 @@ func BatchJob() *wizardv1.WizardDefinitionSpec {
 				"version": "${steps.build.outputs.version}", "tag": "${config.tagName}"}},
 			{Name: "template", Type: wizardv1.StepJobTemplate, Params: map[string]string{
 				"name": "${params.jobName}", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}", "image": "${config.runnerImage}"}},
-			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}",
+				"externalAuthMode": "${params.externalAuthMode}", "externalAuthName": "${params.externalAuthName}"}},
 			{Name: "trigger", Type: wizardv1.StepTrigger, Params: map[string]string{
 				"name": "${params.jobName}", "chain": "${steps.chain.outputs.name}",
-				"type": "${params.triggerType}", "schedule": "${params.schedule}", "fireOnCreate": "true"}},
+				"type": "${params.triggerType}", "schedule": "${params.schedule}", "fireOnCreate": "true",
+				"externalAuthOverrideMode": "${params.externalAuthOverrideMode}", "externalAuthOverrideName": "${params.externalAuthOverrideName}"}},
 		},
 	}
 }
@@ -115,6 +127,8 @@ func BatchCronJob() *wizardv1.WizardDefinitionSpec {
 			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}, Description: "Branch or tag to watch"},
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
 			{Name: "jobs", Required: true, Description: "YAML or JSON list of {cron, params} entries — validated by weave at creation time"},
+			{Name: "externalAuthMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"},
+			{Name: "externalAuthName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: allowlisted ServiceAccount name or OIDC secret name (see weave's external-auth options)"},
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
@@ -125,7 +139,8 @@ func BatchCronJob() *wizardv1.WizardDefinitionSpec {
 				"version": "${steps.build.outputs.version}", "tag": "${config.tagName}"}},
 			{Name: "template", Type: wizardv1.StepJobTemplate, Params: map[string]string{
 				"name": "${params.jobName}", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}", "image": "${config.runnerImage}"}},
-			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.jobName}", "jobTemplate": "${steps.template.outputs.name}",
+				"externalAuthMode": "${params.externalAuthMode}", "externalAuthName": "${params.externalAuthName}"}},
 			{Name: "trigger", Type: wizardv1.StepBatchTrigger, Params: map[string]string{
 				"name": "${params.jobName}", "chain": "${steps.chain.outputs.name}", "jobs": "${params.jobs}"}},
 		},

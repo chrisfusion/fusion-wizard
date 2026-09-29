@@ -6,6 +6,7 @@ package steps
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -534,6 +535,103 @@ func TestTriggerReuseRequiresIdenticalSettings(t *testing.T) {
 			q[k] = v
 		}
 		change(q)
+		if _, err := r.ensure(t, wizardv1.StepTrigger, "run-c", "trigger", q); !IsPermanent(err) {
+			t.Errorf("%s: want a conflict, got %v", name, err)
+		}
+	}
+}
+
+// ---- externalAuth (chain + trigger override) ----
+
+func TestChainExternalAuthRef(t *testing.T) {
+	r := newRig(t)
+	r.mustDone(t, wizardv1.StepChain, "run-a", "chain", map[string]string{
+		"name": "ch", "jobTemplate": "tpl", "externalAuthMode": "oidc", "externalAuthName": "kc-client"})
+	if got := r.weave.Objs["chains/ch"]["spec"].(map[string]any)["externalAuthRef"]; !reflect.DeepEqual(got, map[string]any{"mode": "oidc", "name": "kc-client"}) {
+		t.Errorf("externalAuthRef = %v", got)
+	}
+
+	// Empty params (an unused optional definition parameter) mean "not set": no field at all.
+	r.mustDone(t, wizardv1.StepChain, "run-a", "plain", map[string]string{
+		"name": "plain", "jobTemplate": "tpl", "externalAuthMode": "", "externalAuthName": ""})
+	if _, has := r.weave.Objs["chains/plain"]["spec"].(map[string]any)["externalAuthRef"]; has {
+		t.Error("an unset externalAuth must not add externalAuthRef")
+	}
+
+	// Identical settings are adopted; a different or missing ref is a conflict.
+	res := r.mustDone(t, wizardv1.StepChain, "run-b", "chain", map[string]string{
+		"name": "ch", "jobTemplate": "tpl", "externalAuthMode": "oidc", "externalAuthName": "kc-client"})
+	if res.Resources[0].Disposition != wizardv1.DispositionAdopted {
+		t.Errorf("disposition = %v", res.Resources[0].Disposition)
+	}
+	for name, p := range map[string]map[string]string{
+		"other name": {"name": "ch", "jobTemplate": "tpl", "externalAuthMode": "oidc", "externalAuthName": "other"},
+		"other mode": {"name": "ch", "jobTemplate": "tpl", "externalAuthMode": "serviceAccount", "externalAuthName": "kc-client"},
+		"none":       {"name": "ch", "jobTemplate": "tpl"},
+	} {
+		if _, err := r.ensure(t, wizardv1.StepChain, "run-c", "chain", p); !IsPermanent(err) {
+			t.Errorf("%s: want a conflict, got %v", name, err)
+		}
+	}
+	// Wanting one on a hand-made chain without it is a conflict too.
+	r.weave.Seed("chains", "mine", map[string]any{"steps": []any{map[string]any{"name": "x", "jobTemplateRef": map[string]any{"name": "tpl"}}}})
+	if _, err := r.ensure(t, wizardv1.StepChain, "run-a", "chain3", map[string]string{
+		"name": "mine", "jobTemplate": "tpl", "externalAuthMode": "oidc", "externalAuthName": "kc-client"}); !IsPermanent(err) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestExternalAuthParamValidation(t *testing.T) {
+	r := newRig(t)
+	bad := []map[string]string{
+		{"name": "c", "jobTemplate": "tpl", "externalAuthMode": "oidc"},
+		{"name": "c", "jobTemplate": "tpl", "externalAuthName": "x"},
+		{"name": "c", "jobTemplate": "tpl", "externalAuthMode": "basic", "externalAuthName": "x"},
+		// Long-running services must not get a token that expires under them.
+		{"name": "c", "serviceTemplate": "svc", "externalAuthMode": "oidc", "externalAuthName": "x"},
+	}
+	for _, p := range bad {
+		if _, err := r.ensure(t, wizardv1.StepChain, "run-a", "chain", p); !IsPermanent(err) {
+			t.Errorf("%v: want a permanent error, got %v", p, err)
+		}
+	}
+	if r.weave.Has("chains", "c") {
+		t.Error("an invalid chain must not be created")
+	}
+	tbad := []map[string]string{
+		{"name": "t", "chain": "ch", "externalAuthOverrideMode": "oidc"},
+		{"name": "t", "chain": "ch", "externalAuthOverrideMode": "basic", "externalAuthOverrideName": "x"},
+	}
+	for _, p := range tbad {
+		if _, err := r.ensure(t, wizardv1.StepTrigger, "run-a", "trigger", p); !IsPermanent(err) {
+			t.Errorf("%v: want a permanent error, got %v", p, err)
+		}
+	}
+	if r.weave.Has("triggers", "t") {
+		t.Error("an invalid trigger must not be created")
+	}
+}
+
+func TestTriggerExternalAuthRefOverride(t *testing.T) {
+	r := newRig(t)
+	p := map[string]string{"name": "t", "chain": "ch", "externalAuthOverrideMode": "serviceAccount", "externalAuthOverrideName": "batch-sa"}
+	r.mustDone(t, wizardv1.StepTrigger, "run-a", "trigger", p)
+	if got := r.weave.Objs["triggers/t"]["spec"].(map[string]any)["externalAuthRefOverride"]; !reflect.DeepEqual(got, map[string]any{"mode": "serviceAccount", "name": "batch-sa"}) {
+		t.Errorf("externalAuthRefOverride = %v", got)
+	}
+
+	r.mustDone(t, wizardv1.StepTrigger, "run-a", "plain", map[string]string{"name": "plain", "chain": "ch", "externalAuthOverrideMode": "", "externalAuthOverrideName": ""})
+	if _, has := r.weave.Objs["triggers/plain"]["spec"].(map[string]any)["externalAuthRefOverride"]; has {
+		t.Error("an unset override must not add externalAuthRefOverride")
+	}
+
+	if res := r.mustDone(t, wizardv1.StepTrigger, "run-b", "trigger", p); res.Resources[0].Disposition != wizardv1.DispositionAdopted {
+		t.Errorf("identical settings must be adopted, got %v", res.Resources[0].Disposition)
+	}
+	for name, q := range map[string]map[string]string{
+		"other name": {"name": "t", "chain": "ch", "externalAuthOverrideMode": "serviceAccount", "externalAuthOverrideName": "other"},
+		"none":       {"name": "t", "chain": "ch"},
+	} {
 		if _, err := r.ensure(t, wizardv1.StepTrigger, "run-c", "trigger", q); !IsPermanent(err) {
 			t.Errorf("%s: want a conflict, got %v", name, err)
 		}
