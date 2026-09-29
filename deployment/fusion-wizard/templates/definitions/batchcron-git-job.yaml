@@ -4,7 +4,7 @@
 # pasted list of many cron-scheduled entries. No fireOnCreate — BatchCron entries each start on
 # their own internal schedule (weave's own scheduler), not a one-shot fire.
 # Keep in step with stepstest.BatchCronJob (internal/chart/chart_test.go enforces it).
-{{- if .Values.definitions.batchCronGitJob.enabled }}
+{{- if ((.Values.definitions | default dict).batchCronGitJob | default dict).enabled }}
 apiVersion: wizard.fusion-platform.io/v1alpha1
 kind: WizardDefinition
 metadata:

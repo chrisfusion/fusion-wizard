@@ -4,7 +4,7 @@
 # values (runner image, tag name, ...) are ${config.x} references, resolved from the instance
 # ConfigMap.
 # Keep in step with stepstest.BatchJob (internal/chart/chart_test.go enforces it).
-{{- if .Values.definitions.batchGitJob.enabled }}
+{{- if ((.Values.definitions | default dict).batchGitJob | default dict).enabled }}
 apiVersion: wizard.fusion-platform.io/v1alpha1
 kind: WizardDefinition
 metadata:

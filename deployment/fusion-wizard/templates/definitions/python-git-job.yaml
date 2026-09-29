@@ -3,7 +3,7 @@
 # tag it, create a job template and chain, and one trigger per entrypoint. Instance-specific values
 # (runner image, tag name, ...) are ${config.x} references, resolved from the instance ConfigMap.
 # Keep in step with stepstest.PythonJob (internal/chart/chart_test.go enforces it).
-{{- if .Values.definitions.pythonGitJob.enabled }}
+{{- if ((.Values.definitions | default dict).pythonGitJob | default dict).enabled }}
 apiVersion: wizard.fusion-platform.io/v1alpha1
 kind: WizardDefinition
 metadata:
