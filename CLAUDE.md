@@ -79,3 +79,7 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - `fusion-dev-a`/`fusion-dev-b` are Flux-managed — never `helm upgrade` those; e2e in a disposable namespace. `fusion` itself is non-Flux, the user's own dev/test instance — direct `helm upgrade`/deploys there are fine (confirmed 2026-09-22)
 - CHANGELOG entry (Keep a Changelog, `## [x.y.z] — YYYY-MM-DD`) before every commit; bump chart `version`/`appVersion` on release
 - Branch is `main`; ask before commit/push; no Claude co-author trailer; SPDX header on every `.go` file
+
+## Multi-tenancy / ownership
+
+Cross-project plan (owner groups, trusted headers `X-User-Groups` etc., migration, rollout): `../fusion-shared/docs/multi-tenancy.md` — read it before touching ownership, groups or the `X-User-*` headers.
