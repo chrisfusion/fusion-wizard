@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -104,7 +103,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		var instances []plan.Instance
 		if instances, err = plan.Expand(&def.Spec, values); err == nil { // e.g. duplicate forEach items
-			err = validateExternalAuth(instances, values)
+			err = validateStepParams(instances, values)
 		}
 	}
 	if err != nil {
@@ -378,16 +377,16 @@ func (s *Server) requestRollback(ctx context.Context, run *wizardv1.WizardRun) e
 	return s.client.Patch(ctx, run, patch)
 }
 
-// validateExternalAuth rejects a half-set or unknown externalAuth pair up front. Only params that
-// resolve from run parameters and forEach items are checked; ones that depend on earlier step
-// outputs are left to the step itself.
-func validateExternalAuth(instances []plan.Instance, values map[string]any) error {
+// validateStepParams rejects a half-set or unknown externalAuth pair and a bad run image up front.
+// Only params that resolve from run parameters and forEach items are checked; ones that depend on
+// earlier step outputs are left to the step itself.
+func validateStepParams(instances []plan.Instance, values map[string]any) error {
 	var errs []error
 	for _, in := range instances {
 		pctx := params.Context{Params: values, Item: in.Item, ItemFields: in.ItemFields}
 		resolved, declared := map[string]string{}, 0
 		for k, v := range in.Step.Params {
-			if !strings.HasPrefix(k, "externalAuth") {
+			if !steps.ValidatesEarly(in.Step.Type, k) {
 				continue
 			}
 			declared++
@@ -398,8 +397,10 @@ func validateExternalAuth(instances []plan.Instance, values map[string]any) erro
 		if len(resolved) < declared {
 			continue // depends on a step output: only known once the step runs
 		}
-		if err := steps.ValidateExternalAuthParams(in.Step.Type, resolved); err != nil {
-			errs = append(errs, fmt.Errorf("step %q: %w", in.Key, err))
+		for _, validate := range []func(wizardv1.StepType, map[string]string) error{steps.ValidateExternalAuthParams, steps.ValidateImageParams} {
+			if err := validate(in.Step.Type, resolved); err != nil {
+				errs = append(errs, fmt.Errorf("step %q: %w", in.Key, err))
+			}
 		}
 	}
 	return errors.Join(errs...)

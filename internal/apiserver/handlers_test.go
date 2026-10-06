@@ -428,3 +428,53 @@ func TestPanicIsRecoveredAsA500(t *testing.T) {
 		t.Errorf("the panic value must not reach the client: %s", rec.Body.String())
 	}
 }
+
+func TestCreateRunValidatesImageService(t *testing.T) {
+	h := newHarness(t)
+	h.seedImageService()
+	body := func(image string) map[string]any {
+		return map[string]any{"definition": "image-service", "parameters": map[string]any{"baseName": "base", "serviceName": "cust", "image": image}}
+	}
+
+	expect(t, h.do(http.MethodPost, "/api/v1/runs", body("registry.example/a/app:1.4.2")), http.StatusCreated)
+
+	for _, image := range []string{"registry.example/a/app", "registry.example/a/app:latest"} {
+		rec := h.do(http.MethodPost, "/api/v1/runs", body(image))
+		expect(t, rec, http.StatusUnprocessableEntity)
+		if e := decode[errResp](t, rec); !strings.Contains(strings.Join(e.Details, "\n")+e.Error, "explicit tag") {
+			t.Errorf("%q: want the tag rule in %+v", image, e)
+		}
+	}
+	if h.runCount() != 1 {
+		t.Errorf("a rejected image must not create a run, found %d", h.runCount())
+	}
+}
+
+func TestCreateRunValidatesImageJobs(t *testing.T) {
+	h := newHarness(t)
+	h.seedImageJobs()
+	job := func(image string) map[string]any {
+		return map[string]any{"definition": "image-job", "parameters": map[string]any{"baseName": "base", "jobName": "once", "image": image}}
+	}
+	cron := func(image string) map[string]any {
+		return map[string]any{"definition": "image-cron-job", "parameters": map[string]any{
+			"baseName": "base", "jobName": "nightly", "image": image, "schedule": "0 9 * * *"}}
+	}
+
+	expect(t, h.do(http.MethodPost, "/api/v1/runs", job("registry.example/a/job:1")), http.StatusCreated)
+	expect(t, h.do(http.MethodPost, "/api/v1/runs", cron("registry.example/a/job:1")), http.StatusCreated)
+
+	for name, body := range map[string]map[string]any{
+		"job, latest": job("registry.example/a/job:latest"), "job, untagged": job("registry.example/a/job"),
+		"cron, latest": cron("registry.example/a/job:latest"), "cron, untagged": cron("registry.example/a/job"),
+	} {
+		rec := h.do(http.MethodPost, "/api/v1/runs", body)
+		expect(t, rec, http.StatusUnprocessableEntity)
+		if e := decode[errResp](t, rec); !strings.Contains(strings.Join(e.Details, "\n")+e.Error, "explicit tag") {
+			t.Errorf("%s: want the tag rule in %+v", name, e)
+		}
+	}
+	if h.runCount() != 2 {
+		t.Errorf("a rejected image must not create a run, found %d", h.runCount())
+	}
+}

@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# A one-shot job from a caller-supplied container image, in catalogue form: an image-only job
+# template and a Job-kind chain (both shared by every job with the same baseName), plus one WeaveRun
+# per job whose imageOverrides carry the image; the run starts right away. n images cost one
+# template, one chain and n runs. Needs weave's imageOverrides.allowedPrefixes to be set; weave
+# rejects images outside it.
+# Keep in step with stepstest.ImageJob (internal/chart/chart_test.go enforces it).
+{{- if ((.Values.definitions | default dict).imageJob | default dict).enabled }}
+apiVersion: wizard.fusion-platform.io/v1alpha1
+kind: WizardDefinition
+metadata:
+  name: image-job
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+spec:
+  description: "Run a one-shot job from a container image"
+  parameters:
+    - name: baseName
+      required: true
+      pattern: "^[a-z0-9-]+$"
+      description: "Name of the shared job template and chain; jobs with the same baseName share them"
+    - name: jobName
+      required: true
+      pattern: "^[a-z0-9-]+$"
+      description: "Name of this job's run"
+    - name: image
+      required: true
+      description: "Full image reference with an explicit tag (not latest) or a digest, within weave's allowed image prefixes"
+    - name: imagePullPolicy
+      default: ""
+      description: "Optional: Always, IfNotPresent or Never"
+  steps:
+    - name: template
+      type: jobTemplate
+      params:
+        name: "${params.baseName}"
+        image: "${config.runnerImage}"
+    - name: chain
+      type: chain
+      params:
+        name: "${params.baseName}"
+        jobTemplate: "${steps.template.outputs.name}"
+    - name: run
+      type: run
+      params:
+        name: "${params.jobName}"
+        chain: "${steps.chain.outputs.name}"
+        stepKind: "Job"
+        image: "${params.image}"
+        imagePullPolicy: "${params.imagePullPolicy}"
+{{- end }}

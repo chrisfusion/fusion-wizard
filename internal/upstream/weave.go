@@ -18,6 +18,7 @@ const (
 	WeaveServiceTemplates = "servicetemplates"
 	WeaveChains           = "chains"
 	WeaveTriggers         = "triggers"
+	WeaveRuns             = "runs"
 	weaveBatchTriggers    = "batchtriggers"
 )
 

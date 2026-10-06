@@ -192,6 +192,53 @@ func TestPythonServiceDefinitionIsValidAndMatchesTheCode(t *testing.T) {
 	}
 }
 
+func TestImageServiceDefinitionIsValidAndMatchesTheCode(t *testing.T) {
+	def := reroundtrip[wizardv1.WizardDefinition](t, find(t, mustRender(t, goodArgs...), "WizardDefinition", "image-service"))
+
+	if err := steps.ValidateDefinition(&def.Spec); err != nil {
+		t.Fatalf("the shipped definition is invalid: %v", err)
+	}
+	if want := stepstest.ImageService(); !equality.Semantic.DeepEqual(def.Spec, *want) {
+		got, _ := yaml.Marshal(def.Spec)
+		exp, _ := yaml.Marshal(want)
+		t.Errorf("chart definition differs from stepstest.ImageService\n--- chart ---\n%s\n--- code ---\n%s", got, exp)
+	}
+
+	objs := mustRender(t, append([]string{"--set", "definitions.imageService.enabled=false"}, goodArgs...)...)
+	for _, o := range objs {
+		if o.kind() == "WizardDefinition" && o.name() == "image-service" {
+			t.Error("the definition must be switchable off")
+		}
+	}
+}
+
+func TestImageJobDefinitionsAreValidAndMatchTheCode(t *testing.T) {
+	for _, c := range []struct {
+		name, toggle string
+		want         *wizardv1.WizardDefinitionSpec
+	}{
+		{"image-job", "imageJob", stepstest.ImageJob()},
+		{"image-cron-job", "imageCronJob", stepstest.ImageCronJob()},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			def := reroundtrip[wizardv1.WizardDefinition](t, find(t, mustRender(t, goodArgs...), "WizardDefinition", c.name))
+			if err := steps.ValidateDefinition(&def.Spec); err != nil {
+				t.Fatalf("the shipped definition is invalid: %v", err)
+			}
+			if !equality.Semantic.DeepEqual(def.Spec, *c.want) {
+				got, _ := yaml.Marshal(def.Spec)
+				exp, _ := yaml.Marshal(c.want)
+				t.Errorf("chart definition differs from the stepstest fixture\n--- chart ---\n%s\n--- code ---\n%s", got, exp)
+			}
+			for _, o := range mustRender(t, append([]string{"--set", "definitions." + c.toggle + ".enabled=false"}, goodArgs...)...) {
+				if o.kind() == "WizardDefinition" && o.name() == c.name {
+					t.Error("the definition must be switchable off")
+				}
+			}
+		})
+	}
+}
+
 func TestInstanceConfigParsesWithTheRealLoader(t *testing.T) {
 	cm := find(t, mustRender(t, goodArgs...), "ConfigMap", "rel-config")
 	data := map[string]string{}

@@ -27,13 +27,14 @@ var catalogueOrder = []wizardv1.StepType{
 	wizardv1.StepJobTemplate,
 	wizardv1.StepServiceTemplate,
 	wizardv1.StepChain,
+	wizardv1.StepRun,
 	wizardv1.StepTrigger,
 	wizardv1.StepBatchTrigger,
 }
 
 var registry = func() map[wizardv1.StepType]Step {
 	m := map[wizardv1.StepType]Step{}
-	for _, s := range []Step{gitWatcherStep{}, waitBuildStep{}, tagStep{}, jobTemplateStep{}, serviceTemplateStep{}, chainStep{}, triggerStep{}, batchTriggerStep{}} {
+	for _, s := range []Step{gitWatcherStep{}, waitBuildStep{}, tagStep{}, jobTemplateStep{}, serviceTemplateStep{}, chainStep{}, runStep{}, triggerStep{}, batchTriggerStep{}} {
 		m[s.Type()] = s
 	}
 	return m

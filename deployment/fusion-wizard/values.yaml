@@ -112,3 +112,9 @@ definitions:
     enabled: true
   pythonGitService:
     enabled: true
+  imageService:
+    enabled: true
+  imageJob:
+    enabled: true
+  imageCronJob:
+    enabled: true

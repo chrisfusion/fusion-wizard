@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# A long-running service from a caller-supplied container image, in catalogue form: an image-only
+# service template and a Deploy-kind chain (both shared by every service with the same baseName),
+# plus one WeaveRun per service that deploys a run-owned Deployment with the image from weave's
+# run-level imageOverrides. n images cost one template, one chain and n runs. Needs weave's
+# imageOverrides.allowedPrefixes to be set; weave rejects images outside it.
+# Keep in step with stepstest.ImageService (internal/chart/chart_test.go enforces it).
+{{- if ((.Values.definitions | default dict).imageService | default dict).enabled }}
+apiVersion: wizard.fusion-platform.io/v1alpha1
+kind: WizardDefinition
+metadata:
+  name: image-service
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fusion-wizard.labels" . | nindent 4 }}
+spec:
+  description: "Deploy a long-running service from a container image"
+  parameters:
+    - name: baseName
+      required: true
+      pattern: "^[a-z0-9-]+$"
+      description: "Name of the shared service template and chain; services with the same baseName (and port) share them"
+    - name: serviceName
+      required: true
+      pattern: "^[a-z0-9-]+$"
+      description: "Name of this service's run, and so of its Deployment"
+    - name: image
+      required: true
+      description: "Full image reference with an explicit tag (not latest) or a digest, within weave's allowed image prefixes"
+    - name: imagePullPolicy
+      default: ""
+      description: "Optional: Always, IfNotPresent or Never"
+    - name: port
+      type: number
+      default: 8080
+      description: "Port the service listens on"
+    - name: ingressName
+      default: ""
+      description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)"
+  steps:
+    - name: template
+      type: serviceTemplate
+      params:
+        name: "${params.baseName}"
+        image: "${config.runnerImage}"
+        port: "${params.port}"
+    - name: chain
+      type: chain
+      params:
+        name: "${params.baseName}"
+        serviceTemplate: "${steps.template.outputs.name}"
+    - name: run
+      type: run
+      params:
+        name: "${params.serviceName}"
+        chain: "${steps.chain.outputs.name}"
+        image: "${params.image}"
+        imagePullPolicy: "${params.imagePullPolicy}"
+        ingressName: "${params.ingressName}"
+{{- end }}

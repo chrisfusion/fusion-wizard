@@ -18,6 +18,7 @@ import (
 // the catalogue order: the watcher must go before the index artifact and tag it feeds, or forge
 // would rebuild the artifact right after it was removed. Unknown kinds go last.
 var undoRank = map[string]int{
+	KindRun:             5,
 	KindTrigger:         10,
 	KindBatchTrigger:    10,
 	KindChain:           20,

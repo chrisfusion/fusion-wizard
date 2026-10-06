@@ -28,6 +28,7 @@ const (
 	KindJobTemplate     = "jobtemplate"
 	KindServiceTemplate = "servicetemplate"
 	KindChain           = "chain"
+	KindRun             = "run"
 	KindTrigger         = "trigger"
 	KindBatchTrigger    = "batchtrigger"
 )

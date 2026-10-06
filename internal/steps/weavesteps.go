@@ -83,20 +83,32 @@ type jobTemplateStep struct{}
 func (jobTemplateStep) Type() wizardv1.StepType { return wizardv1.StepJobTemplate }
 func (jobTemplateStep) Outputs() []string       { return []string{"name"} }
 func (jobTemplateStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "artifactName", "tag"}, Optional: []string{"image"}}
+	return ParamSpec{Required: []string{"name"}, Optional: []string{"artifactName", "tag", "image"}}
 }
 
 // Ensure creates a WeaveJobTemplate that runs the built artifact. The identity of a template is
 // the artifact and tag it runs; the runner image and resources are instance defaults and are not
 // part of the identity, so changing them in the instance config never turns an existing shared
 // template into a conflict.
+//
+// artifactName and tag (both or neither) select the mode. Without them the template is image-only:
+// no codeSource, so the Job runs whatever image a run's imageOverrides supplies (see the run step)
+// and nothing is loaded from fusion-index.
 func (jobTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name, artifactName, tag := in.Params["name"], in.Params["artifactName"], in.Params["tag"]
 	image := firstNonEmpty(in.Params["image"], env.Cfg.RunnerImage)
+	if (artifactName == "") != (tag == "") {
+		return Result{}, permanentf("jobTemplate %q needs artifactName and tag together, or neither (image-only)", name)
+	}
 
-	spec := map[string]any{
-		"image":      image,
-		"codeSource": map[string]any{"artifactName": artifactName, "tag": tag},
+	spec := map[string]any{"image": image}
+	// Artifact mode keeps its original hash parts, so entries written before image-only mode existed
+	// still match.
+	hashParts := []string{KindJobTemplate, artifactName, tag}
+	if artifactName != "" {
+		spec["codeSource"] = map[string]any{"artifactName": artifactName, "tag": tag}
+	} else {
+		hashParts = []string{KindJobTemplate, "image-only"}
 	}
 	res, err := resourcesMap(env.Cfg.DefaultResources)
 	if err != nil {
@@ -106,7 +118,7 @@ func (jobTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Result, 
 		spec["resources"] = res
 	}
 
-	return env.weaveResource(ctx, in, KindJobTemplate, name, ledger.Hash(KindJobTemplate, artifactName, tag),
+	return env.weaveResource(ctx, in, KindJobTemplate, name, ledger.Hash(hashParts...),
 		upstream.NewWeaveObject("WeaveJobTemplate", name, spec),
 		func(existing map[string]any) string {
 			if nestedString(existing, "codeSource", "artifactName") != artifactName || nestedString(existing, "codeSource", "tag") != tag {
@@ -123,7 +135,7 @@ type serviceTemplateStep struct{}
 func (serviceTemplateStep) Type() wizardv1.StepType { return wizardv1.StepServiceTemplate }
 func (serviceTemplateStep) Outputs() []string       { return []string{"name"} }
 func (serviceTemplateStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "artifactName", "tag", "port"}, Optional: []string{"image", "ingressName"}}
+	return ParamSpec{Required: []string{"name", "port"}, Optional: []string{"artifactName", "tag", "image", "ingressName"}}
 }
 
 // servicePortName is the WeaveServiceTemplate port's own name, referenced by an ingress rule's
@@ -134,6 +146,10 @@ const servicePortName = "http"
 // (e.g. a Streamlit app), instead of a one-shot Job. Unlike jobTemplate, the port and ingress name
 // are part of the template's identity alongside the artifact and tag: they change what the service
 // actually exposes, not just an instance default like the runner image.
+//
+// artifactName and tag (both or neither) select the mode. Without them the template is image-only:
+// no codeSource, so the Deployment runs whatever image a run's imageOverrides supplies (see the run
+// step) and nothing is loaded from fusion-index.
 func (serviceTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name, artifactName, tag := in.Params["name"], in.Params["artifactName"], in.Params["tag"]
 	portStr, ingressName := in.Params["port"], in.Params["ingressName"]
@@ -143,11 +159,21 @@ func (serviceTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Resu
 	if err != nil {
 		return Result{}, permanentf("port %q is not a whole number", portStr)
 	}
+	if (artifactName == "") != (tag == "") {
+		return Result{}, permanentf("serviceTemplate %q needs artifactName and tag together, or neither (image-only)", name)
+	}
 
 	spec := map[string]any{
-		"image":      image,
-		"codeSource": map[string]any{"artifactName": artifactName, "tag": tag},
-		"ports":      []any{map[string]any{"name": servicePortName, "port": port}},
+		"image": image,
+		"ports": []any{map[string]any{"name": servicePortName, "port": port}},
+	}
+	// Artifact mode keeps its original hash parts, so entries written before image-only mode existed
+	// still match.
+	hashParts := []string{KindServiceTemplate, artifactName, tag, portStr, ingressName}
+	if artifactName != "" {
+		spec["codeSource"] = map[string]any{"artifactName": artifactName, "tag": tag}
+	} else {
+		hashParts = []string{KindServiceTemplate, "image-only", portStr, ingressName}
 	}
 	res, err := resourcesMap(env.Cfg.DefaultResources)
 	if err != nil {
@@ -161,7 +187,7 @@ func (serviceTemplateStep) Ensure(ctx context.Context, env *Env, in Input) (Resu
 	}
 
 	return env.weaveResource(ctx, in, KindServiceTemplate, name,
-		ledger.Hash(KindServiceTemplate, artifactName, tag, portStr, ingressName),
+		ledger.Hash(hashParts...),
 		upstream.NewWeaveObject("WeaveServiceTemplate", name, spec),
 		func(existing map[string]any) string {
 			switch {
@@ -188,6 +214,8 @@ func existingPort(spec map[string]any) string {
 		return ""
 	}
 	switch v := m["port"].(type) {
+	case int: // in-memory fakes keep the typed value; real weave JSON decodes to float64
+		return strconv.Itoa(v)
 	case float64:
 		return strconv.FormatFloat(v, 'f', -1, 64)
 	case string:
@@ -285,7 +313,7 @@ type triggerStep struct{}
 func (triggerStep) Type() wizardv1.StepType { return wizardv1.StepTrigger }
 func (triggerStep) Outputs() []string       { return []string{"name"} }
 func (triggerStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule", "fireOnCreate", "externalAuthOverrideMode", "externalAuthOverrideName"}, Prefixes: []string{overridePrefix}}
+	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule", "fireOnCreate", "externalAuthOverrideMode", "externalAuthOverrideName", "image", "imagePullPolicy", "stepName"}, Prefixes: []string{overridePrefix}}
 }
 
 // Ensure creates a WeaveTrigger (OnDemand or Cron) for the chain. Params prefixed "override."
@@ -299,6 +327,11 @@ func (triggerStep) Params() ParamSpec {
 //
 // externalAuthOverrideMode/externalAuthOverrideName (both or neither) set the trigger's
 // externalAuthRefOverride, which takes precedence over the chain's externalAuthRef.
+//
+// image (with optional imagePullPolicy and stepName, default the chain's step name) sets the
+// trigger's imageOverrides: weave copies it into every run the trigger creates, so a shared image-only
+// job template can run a caller-supplied image. Job steps only (a trigger cannot make a Deployment
+// run-owned). Weave checks the tag rule and the allowed prefixes.
 func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name, chain := in.Params["name"], in.Params["chain"]
 	typ := firstNonEmpty(in.Params["type"], "OnDemand")
@@ -326,7 +359,23 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 		return Result{}, err
 	}
 
+	if err := ValidateImageParams(wizardv1.StepTrigger, in.Params); err != nil {
+		return Result{}, err
+	}
+	image, pullPolicy := in.Params["image"], in.Params["imagePullPolicy"]
+	imageStep := firstNonEmpty(in.Params["stepName"], env.Cfg.ChainStepName)
+
 	spec := map[string]any{"chainRef": map[string]any{"name": chain}, "type": typ}
+	hashParts := []string{KindTrigger, chain, typ, schedule}
+	if image != "" {
+		override := map[string]any{"stepName": imageStep, "image": image}
+		if pullPolicy != "" {
+			override["imagePullPolicy"] = pullPolicy
+		}
+		spec["imageOverrides"] = []any{override}
+		// Only set when used, so triggers written before image overrides existed keep their hash.
+		hashParts = append(hashParts, "image", imageStep, image, pullPolicy)
+	}
 	if authRef != nil {
 		spec["externalAuthRefOverride"] = authRef
 	}
@@ -347,7 +396,7 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 	}
 
 	return env.weaveResource(ctx, in, KindTrigger, name,
-		ledger.Hash(authHashParts(authRef, append([]string{KindTrigger, chain, typ, schedule}, pairs...)...)...),
+		ledger.Hash(authHashParts(authRef, append(hashParts, pairs...)...)...),
 		upstream.NewWeaveObject("WeaveTrigger", name, spec),
 		func(existing map[string]any) string {
 			switch {
@@ -359,9 +408,29 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 				return "it has different parameter overrides"
 			case existingAuthKey(existing, "externalAuthRefOverride") != authRefKey(authRef):
 				return "it has a different externalAuthRefOverride"
+			case existingImageKey(existing) != imageKey(imageStep, image, pullPolicy):
+				return "it has different image overrides"
 			}
 			return ""
 		}, afterCreate, map[string]string{"name": name})
+}
+
+// imageKey is the comparable identity of a trigger's image override ("" when none is wanted).
+func imageKey(stepName, image, pullPolicy string) string {
+	if image == "" {
+		return ""
+	}
+	return stepName + "\x00" + image + "\x00" + pullPolicy
+}
+
+// existingImageKey reads the first imageOverrides entry of a weave-returned trigger spec in the
+// same form as imageKey.
+func existingImageKey(spec map[string]any) string {
+	list, _ := nested(spec, "imageOverrides").([]any)
+	if len(list) == 0 {
+		return ""
+	}
+	return imageKey(firstEntryString(list, "stepName"), firstEntryString(list, "image"), firstEntryString(list, "imagePullPolicy"))
 }
 
 // externalAuthFromParams reads an optional weave externalAuthRef from two step params. Both empty

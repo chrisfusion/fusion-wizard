@@ -79,6 +79,79 @@ func PythonService() *wizardv1.WizardDefinitionSpec {
 	}
 }
 
+// ImageService returns a fresh copy of the reference definition: a long-running service from a
+// caller-supplied container image (image-only service template, a Deploy-kind chain, one run-owned
+// Deployment through a WeaveRun with imageOverrides). The template and chain are shared by every
+// service with the same baseName; each service adds only its own run.
+func ImageService() *wizardv1.WizardDefinitionSpec {
+	return &wizardv1.WizardDefinitionSpec{
+		Description: "Deploy a long-running service from a container image",
+		Parameters: []wizardv1.WizardParameter{
+			{Name: "baseName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Name of the shared service template and chain; services with the same baseName (and port) share them"},
+			{Name: "serviceName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Name of this service's run, and so of its Deployment"},
+			{Name: "image", Required: true, Description: "Full image reference with an explicit tag (not latest) or a digest, within weave's allowed image prefixes"},
+			{Name: "imagePullPolicy", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: Always, IfNotPresent or Never"},
+			{Name: "port", Type: wizardv1.ParameterNumber, Default: &apiextensionsv1.JSON{Raw: []byte(`8080`)}, Description: "Port the service listens on"},
+			{Name: "ingressName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)"},
+		},
+		Steps: []wizardv1.WizardStep{
+			{Name: "template", Type: wizardv1.StepServiceTemplate, Params: map[string]string{
+				"name": "${params.baseName}", "image": "${config.runnerImage}", "port": "${params.port}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.baseName}", "serviceTemplate": "${steps.template.outputs.name}"}},
+			{Name: "run", Type: wizardv1.StepRun, Params: map[string]string{
+				"name": "${params.serviceName}", "chain": "${steps.chain.outputs.name}", "image": "${params.image}",
+				"imagePullPolicy": "${params.imagePullPolicy}", "ingressName": "${params.ingressName}"}},
+		},
+	}
+}
+
+// ImageJob returns a fresh copy of the reference definition: a one-shot job from a caller-supplied
+// container image (image-only job template, a Job-kind chain, one WeaveRun with imageOverrides that
+// starts right away). The template and chain are shared by every job with the same baseName; each job
+// adds only its own run.
+func ImageJob() *wizardv1.WizardDefinitionSpec {
+	return &wizardv1.WizardDefinitionSpec{
+		Description: "Run a one-shot job from a container image",
+		Parameters: []wizardv1.WizardParameter{
+			{Name: "baseName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Name of the shared job template and chain; jobs with the same baseName share them"},
+			{Name: "jobName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Name of this job's run"},
+			{Name: "image", Required: true, Description: "Full image reference with an explicit tag (not latest) or a digest, within weave's allowed image prefixes"},
+			{Name: "imagePullPolicy", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: Always, IfNotPresent or Never"},
+		},
+		Steps: []wizardv1.WizardStep{
+			{Name: "template", Type: wizardv1.StepJobTemplate, Params: map[string]string{"name": "${params.baseName}", "image": "${config.runnerImage}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.baseName}", "jobTemplate": "${steps.template.outputs.name}"}},
+			{Name: "run", Type: wizardv1.StepRun, Params: map[string]string{
+				"name": "${params.jobName}", "chain": "${steps.chain.outputs.name}", "stepKind": "Job",
+				"image": "${params.image}", "imagePullPolicy": "${params.imagePullPolicy}"}},
+		},
+	}
+}
+
+// ImageCronJob returns a fresh copy of the reference definition: a Cron-scheduled job from a
+// caller-supplied container image (image-only job template, a Job-kind chain, one Cron trigger whose
+// imageOverrides weave copies into every run it creates). The template and chain are shared by every
+// job with the same baseName; each job adds only its own trigger.
+func ImageCronJob() *wizardv1.WizardDefinitionSpec {
+	return &wizardv1.WizardDefinitionSpec{
+		Description: "Run a container image on a cron schedule",
+		Parameters: []wizardv1.WizardParameter{
+			{Name: "baseName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Name of the shared job template and chain; jobs with the same baseName share them"},
+			{Name: "jobName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Name of this job's trigger"},
+			{Name: "image", Required: true, Description: "Full image reference with an explicit tag (not latest) or a digest, within weave's allowed image prefixes"},
+			{Name: "imagePullPolicy", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: Always, IfNotPresent or Never"},
+			{Name: "schedule", Required: true, Description: "Cron expression"},
+		},
+		Steps: []wizardv1.WizardStep{
+			{Name: "template", Type: wizardv1.StepJobTemplate, Params: map[string]string{"name": "${params.baseName}", "image": "${config.runnerImage}"}},
+			{Name: "chain", Type: wizardv1.StepChain, Params: map[string]string{"name": "${params.baseName}", "jobTemplate": "${steps.template.outputs.name}"}},
+			{Name: "trigger", Type: wizardv1.StepTrigger, Params: map[string]string{
+				"name": "${params.jobName}", "chain": "${steps.chain.outputs.name}", "type": "Cron", "schedule": "${params.schedule}",
+				"image": "${params.image}", "imagePullPolicy": "${params.imagePullPolicy}"}},
+		},
+	}
+}
+
 // BatchJob returns a fresh copy of the reference definition: spectra's "Git Batch Job" wizard
 // (watcher, build, tag, template, chain, one trigger fired immediately on creation).
 func BatchJob() *wizardv1.WizardDefinitionSpec {

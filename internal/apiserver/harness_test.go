@@ -128,6 +128,15 @@ func (h *harness) seedDefinition(name string, spec *wizardv1.WizardDefinitionSpe
 // seedPythonJob creates the reference definition under the name "python-job".
 func (h *harness) seedPythonJob() { h.seedDefinition("python-job", stepstest.PythonJob()) }
 
+// seedImageService creates the reference image-service definition under its own name.
+func (h *harness) seedImageService() { h.seedDefinition("image-service", stepstest.ImageService()) }
+
+// seedImageJobs creates the reference image-job and image-cron-job definitions under their own names.
+func (h *harness) seedImageJobs() {
+	h.seedDefinition("image-job", stepstest.ImageJob())
+	h.seedDefinition("image-cron-job", stepstest.ImageCronJob())
+}
+
 func (h *harness) getRun(name string) *wizardv1.WizardRun {
 	h.t.Helper()
 	var run wizardv1.WizardRun

@@ -182,6 +182,7 @@ spec:
                           - jobTemplate
                           - serviceTemplate
                           - chain
+                          - run
                           - trigger
                           - batchTrigger
                           type: string
@@ -408,6 +409,7 @@ spec:
                       - jobTemplate
                       - serviceTemplate
                       - chain
+                      - run
                       - trigger
                       - batchTrigger
                       type: string
