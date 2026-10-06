@@ -5,7 +5,7 @@ IMG ?= fusion-wizard:0.1.0
 NAMESPACE ?= fusion
 CHART_CRDS := deployment/fusion-wizard/crds
 
-.PHONY: all build test generate sync-crds check-crds docker-build create-namespace install-crds
+.PHONY: all build test generate sync-crds check-crds vendor check-vendor docker-build create-namespace install-crds
 
 all: generate build
 
@@ -23,14 +23,25 @@ sync-crds: generate
 check-crds: generate
 	diff -r config/crd/bases $(CHART_CRDS)
 
+## Refresh vendor/ from go.mod (committed so production builds work offline).
+vendor:
+	go mod tidy
+	go mod vendor
+
+## Fail when vendor/ drifted from go.mod/go.sum.
+check-vendor:
+	go mod vendor
+	git diff --exit-code -- vendor go.mod go.sum
+	@test -z "$$(git ls-files --others --exclude-standard -- vendor)" || (echo "untracked files in vendor/" && exit 1)
+
 ## Build the operator and REST API binaries.
 build: generate
-	CGO_ENABLED=0 go build -o bin/manager ./cmd/
-	CGO_ENABLED=0 go build -o bin/api-server ./cmd/api/
+	CGO_ENABLED=0 go build -mod=vendor -o bin/manager ./cmd/
+	CGO_ENABLED=0 go build -mod=vendor -o bin/api-server ./cmd/api/
 
 ## Run unit tests (race detector on: the ledger and reconciler are concurrent).
 test:
-	go test ./... -race
+	go test -mod=vendor ./... -race
 
 ## Build the Docker image inside minikube's daemon so pods can use it directly.
 docker-build:

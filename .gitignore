@@ -11,8 +11,7 @@
 bin/
 dist/
 
-# Go module cache and vendor
-vendor/
+# Go workspace files (vendor/ is committed for offline builds)
 go.work
 go.work.sum
 

@@ -10,6 +10,7 @@ CLAUDE.md is authoritative for its own REST shapes. Module `fusion-platform.io/f
 - `make generate` — deepcopy + CRDs to `config/crd/bases/`; `make sync-crds` copies into the chart's `crds/` (manual: Helm never updates `crds/`); `make check-crds` diffs the two
 - `make test` (`-race`, required: ledger/reconciler are concurrent); `make build`; `make docker-build` (minikube daemon, semver tag)
 - Validate CRDs without persisting: `kubectl apply --dry-run=server -f config/crd/bases/`
+- Go dependencies are vendored and committed (`vendor/`, ~57 MB on disk, ~7 MB in git) because the CI environment that builds the images has no internet access (builds must not download anything). `make build`/`test` and the Dockerfile use `-mod=vendor` (the Dockerfile has no `go mod download`). After any `go.mod` change run `make vendor` and commit `vendor/` with `go.mod`/`go.sum`; `make check-vendor` fails on drift. `vendor/**` is `-diff linguist-vendored` in `.gitattributes`. The only external inputs left are the Docker base images (`golang:1.25-alpine`, `gcr.io/distroless/static:nonroot`) — mirror them in an internal registry or `docker save`/`docker load` them. Verify with `docker build --network none .`
 - Local `go` is 1.22 but `go.mod` needs 1.25 — `GOTOOLCHAIN=auto` uses the cached toolchain; `controller-gen` is `~/go/bin` v0.16.1
 
 ## Design invariants (agreed, don't re-litigate)
