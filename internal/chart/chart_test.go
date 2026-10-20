@@ -10,12 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"sigs.k8s.io/yaml"
 
 	"fusion-platform.io/fusion-wizard/internal/apiserver"
 	"fusion-platform.io/fusion-wizard/internal/envutil"
 	"fusion-platform.io/fusion-wizard/internal/instancecfg"
+	"fusion-platform.io/fusion-wizard/internal/params"
 	"fusion-platform.io/fusion-wizard/internal/steps"
 	"fusion-platform.io/fusion-wizard/internal/steps/stepstest"
 
@@ -208,6 +210,39 @@ func TestImageServiceDefinitionIsValidAndMatchesTheCode(t *testing.T) {
 	for _, o := range objs {
 		if o.kind() == "WizardDefinition" && o.name() == "image-service" {
 			t.Error("the definition must be switchable off")
+		}
+	}
+}
+
+// The service definitions accept one DNS label (or nothing) as ingressName; a full hostname fails at
+// run creation — before the build — since weave appends its own hostSuffix.
+func TestServiceIngressNameIsOneDNSLabel(t *testing.T) {
+	for _, def := range []string{"image-service", "python-git-service"} {
+		spec := reroundtrip[wizardv1.WizardDefinition](t, find(t, mustRender(t, goodArgs...), "WizardDefinition", def)).Spec
+		var ingress []wizardv1.WizardParameter
+		for _, p := range spec.Parameters {
+			if p.Name == "ingressName" {
+				ingress = append(ingress, p)
+			}
+		}
+		if len(ingress) != 1 {
+			t.Fatalf("%s: want one ingressName parameter, got %d", def, len(ingress))
+		}
+		for value, ok := range map[string]bool{
+			``:                      true, // default: no ingress
+			`my-dashboard`:          true,
+			`a`:                     true,
+			`dashboard.example.com`: false,
+			`My-Dashboard`:          false,
+			`-dash`:                 false,
+			`dash-`:                 false,
+			strings.Repeat("a", 63): true,
+			strings.Repeat("a", 64): false,
+		} {
+			_, err := params.ResolveParameters(ingress, map[string]apiextensionsv1.JSON{"ingressName": {Raw: []byte(`"` + value + `"`)}})
+			if (err == nil) != ok {
+				t.Errorf("%s: ingressName %q accepted=%v, want %v (err: %v)", def, value, err == nil, ok, err)
+			}
 		}
 	}
 }

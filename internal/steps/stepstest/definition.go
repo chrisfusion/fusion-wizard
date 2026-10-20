@@ -88,7 +88,7 @@ func PythonService() *wizardv1.WizardDefinitionSpec {
 			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}},
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
 			{Name: "port", Type: wizardv1.ParameterNumber, Default: &apiextensionsv1.JSON{Raw: []byte(`8501`)}, Description: "Port the service listens on (Streamlit's default is 8501)"},
-			{Name: "ingressName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)"},
+			ingressNameParam(),
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
@@ -104,6 +104,19 @@ func PythonService() *wizardv1.WizardDefinitionSpec {
 	}
 }
 
+// IngressNamePattern is one DNS label or empty (= no ingress) — the WeaveApp CRD's ingressName rule
+// plus the empty default. A full hostname is rejected at run creation instead of failing the app
+// step after the build; weave appends its cluster hostSuffix itself.
+const IngressNamePattern = `^([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)?$`
+
+// ingressNameParam is the shared optional ingress parameter of the service definitions.
+func ingressNameParam() wizardv1.WizardParameter {
+	return wizardv1.WizardParameter{
+		Name: "ingressName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Pattern: IngressNamePattern,
+		Description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)",
+	}
+}
+
 // ImageService returns a fresh copy of the reference definition: a long-running service from a
 // caller-supplied container image, one service WeaveApp that owns its Deployment, Service and Ingress.
 func ImageService() *wizardv1.WizardDefinitionSpec {
@@ -113,7 +126,7 @@ func ImageService() *wizardv1.WizardDefinitionSpec {
 			{Name: "serviceName", Required: true, Pattern: `^[a-z0-9-]+$`, Description: "Name of the service's app, and so of its Deployment"},
 			{Name: "image", Required: true, Description: "Full image reference with an explicit tag (not latest) or a digest, within weave's allowed image prefixes"},
 			{Name: "port", Type: wizardv1.ParameterNumber, Default: &apiextensionsv1.JSON{Raw: []byte(`8080`)}, Description: "Port the service listens on"},
-			{Name: "ingressName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)"},
+			ingressNameParam(),
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "app", Type: wizardv1.StepApp, Params: map[string]string{

@@ -32,6 +32,9 @@ spec:
       description: "Port the service listens on (Streamlit's default is 8501)"
     - name: ingressName
       default: ""
+      # one DNS label (weave appends its hostSuffix); empty = no ingress. Mirrors the WeaveApp CRD,
+      # so a full hostname fails at run creation, not after the build at the app step.
+      pattern: "^([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)?$"
       description: "DNS label to expose the service at <ingressName>.<cluster hostSuffix> (optional)"
   steps:
     - name: watcher
