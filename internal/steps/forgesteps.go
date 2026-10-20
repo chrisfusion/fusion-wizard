@@ -32,18 +32,29 @@ type gitWatcherStep struct{}
 func (gitWatcherStep) Type() wizardv1.StepType { return wizardv1.StepGitWatcher }
 func (gitWatcherStep) Outputs() []string       { return []string{"name"} }
 func (gitWatcherStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "repoUrl"}, Optional: []string{"repoRef", "projectDir"}}
+	return ParamSpec{Required: []string{"name", "repoUrl"}, Optional: []string{"repoRef", "projectDir", "autoPromote", "tag"}}
 }
 
 // Ensure creates the forge GitWatcher (build type "app": name and version come from the repo's
 // metadata.yaml). Forge, not the wizard, then builds whenever the repository's version changes.
+// With autoPromote "true", forge also moves the tag (default: the instance's tagName, as in the
+// tag step) to every later build; the tag step only covers the first one. An existing watcher
+// whose auto-tag setting differs is a conflict, never silently changed.
 func (gitWatcherStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name, repoURL := in.Params["name"], in.Params["repoUrl"]
 	repoRef, projectDir := in.Params["repoRef"], in.Params["projectDir"]
+	autoTag := ""
+	if in.Params["autoPromote"] == "true" {
+		autoTag = firstNonEmpty(in.Params["tag"], env.Cfg.TagName)
+	}
+	hashParts := []string{KindGitWatcher, repoURL, repoRef, projectDir}
+	if autoTag != "" { // only when set, so entries written before autoPromote keep their hash
+		hashParts = append(hashParts, "autoTag="+autoTag)
+	}
 
 	return env.ensureStep(ctx, in, managed{
 		Key:  ledger.Key{Service: wizardv1.ServiceForge, Kind: KindGitWatcher, Name: name},
-		Hash: ledger.Hash(KindGitWatcher, repoURL, repoRef, projectDir),
+		Hash: ledger.Hash(hashParts...),
 		Get: func(ctx context.Context) (*existing, error) {
 			gw, err := notFoundAsNil(env.Forge.GetGitWatcher(ctx, name))
 			if gw == nil || err != nil {
@@ -51,14 +62,18 @@ func (gitWatcherStep) Ensure(ctx context.Context, env *Env, in Input) (Result, e
 			}
 			// Same check as spectra's ensureGitWatcher: the repository and subfolder identify the
 			// watcher. repoRef is compared through the ledger hash for wizard-made watchers.
+			if gw.Spec.BuildType != "app" || gw.Spec.RepoURL != repoURL || gw.Spec.ProjectDir != projectDir {
+				return &existing{Detail: "it watches a different repository or subfolder"}, nil
+			}
 			return &existing{
-				Matches: gw.Spec.BuildType == "app" && gw.Spec.RepoURL == repoURL && gw.Spec.ProjectDir == projectDir,
-				Detail:  "it watches a different repository or subfolder",
+				Matches: gw.Spec.AutoTag == autoTag,
+				Detail: fmt.Sprintf("its auto-tag is %q, this run wants %q; set auto_tag on the watcher in forge or change autoPromote",
+					gw.Spec.AutoTag, autoTag),
 			}, nil
 		},
 		Create: func(ctx context.Context) (string, error) {
 			_, err := env.Forge.CreateGitWatcher(ctx, upstream.CreateGitWatcherRequest{
-				Name: name, RepoURL: repoURL, RepoRef: repoRef, BuildType: "app", ProjectDir: projectDir,
+				Name: name, RepoURL: repoURL, RepoRef: repoRef, BuildType: "app", ProjectDir: projectDir, AutoTag: autoTag,
 				Labels: map[string]string{ledger.LabelManagedBy: ledger.ManagedByWizard, ledger.LabelRun: in.Run},
 			})
 			return "", err

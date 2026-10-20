@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-20
+
+### Added
+- `autoPromote` parameter (boolean, default `true`) on `python-git-job`, `python-git-service`, `batch-git-job` and `batchcron-git-job`: the `gitWatcher` step creates the watcher with forge's `auto_tag` set to the run's tag (`${config.tagName}`), so forge moves the tag to every version it builds later (bump `metadata.yaml`'s version, the app picks up the new build) instead of the tag staying on the first build until someone moves it by hand. `false` keeps the manual behaviour. Needs fusion-forge >= 0.11.0 (`GitWatcher.spec.autoTag`); an older forge drops the field, and the step then reports the watcher as a conflict. The auto-tag is part of the watcher's identity: an existing watcher (wizard-made before this change or hand-made) whose auto-tag differs from the run's is a visible conflict, never silently changed. Set `auto_tag` on it in forge (`PUT /api/v1/gitwatchers/:name`) or run with `autoPromote: false`. Included in the ledger hash only when set, so existing entries keep their hash
+
 ### Changed
 - `image-service` and `python-git-service`: `ingressName` now has a pattern (one DNS label, max 63 chars, or empty), mirroring the WeaveApp CRD. A full hostname such as `app.example.com` is rejected at run creation (and in fusion-spectra's form) instead of failing the `app` step after the build — weave appends its own `ingress.hostSuffix`
 - Built on weave's `WeaveApp` (one resource per service or job that owns its Deployment, Service, Ingress and Jobs; fusion-weave 0.6.0): `image-service`, `image-job`, `image-cron-job`, `python-git-job` and `python-git-service` now create a single `WeaveApp` through the new `app` step instead of a template + chain + `run`/`trigger` objects. Nothing is shared between runs any more, so deleting or rolling back a run removes exactly its app. The batch definitions (`batch-git-job`, `batchcron-git-job`) are unchanged, since `WeaveApp` has no trigger-level fire-once, BatchCron or Kafka

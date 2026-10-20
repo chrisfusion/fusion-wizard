@@ -28,6 +28,10 @@ spec:
     - name: projectDir
       default: ""
       description: "Relative path containing metadata.yaml (optional)"
+    - name: autoPromote
+      type: boolean
+      default: true
+      description: "Move the tag to every new version forge builds from the repository (false: move it by hand)"
     - name: jobs
       required: true
       description: "YAML or JSON list of {cron, params} entries — validated by weave at creation time"
@@ -45,6 +49,8 @@ spec:
         repoUrl: "${params.repoUrl}"
         repoRef: "${params.repoRef}"
         projectDir: "${params.projectDir}"
+        autoPromote: "${params.autoPromote}"
+        tag: "${config.tagName}"
     - name: build
       type: waitBuild
       params:

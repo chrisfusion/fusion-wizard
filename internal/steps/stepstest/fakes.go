@@ -88,7 +88,7 @@ func (f *Forge) CreateGitWatcher(_ context.Context, req upstream.CreateGitWatche
 		return nil, APIErr(409)
 	}
 	w := &upstream.GitWatcher{Name: req.Name, Spec: upstream.GitWatcherSpec{
-		RepoURL: req.RepoURL, RepoRef: req.RepoRef, BuildType: req.BuildType, ProjectDir: req.ProjectDir,
+		RepoURL: req.RepoURL, RepoRef: req.RepoRef, BuildType: req.BuildType, ProjectDir: req.ProjectDir, AutoTag: req.AutoTag,
 	}, Status: upstream.GitWatcherStatus{Phase: "Active"}}
 	f.Watchers[req.Name] = w
 	f.log.Add("create forge/gitwatcher/%s", req.Name)

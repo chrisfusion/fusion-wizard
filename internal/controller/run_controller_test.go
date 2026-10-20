@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
+	"fusion-platform.io/fusion-wizard/internal/instancecfg"
 	"fusion-platform.io/fusion-wizard/internal/ledger"
 	"fusion-platform.io/fusion-wizard/internal/steps"
 	"fusion-platform.io/fusion-wizard/internal/steps/stepstest"
@@ -715,6 +716,10 @@ func TestPythonGitServiceIsOneApp(t *testing.T) {
 	}
 	if h.log.Count("fire ") != 0 {
 		t.Errorf("nothing may be fired: %v", h.log.Snapshot())
+	}
+	// autoPromote defaults to true: forge moves the instance's tag to every later build.
+	if got := h.forge.Watchers["nightly"].Spec.AutoTag; got != instancecfg.DefaultTagName {
+		t.Errorf("watcher autoTag = %q, want %q", got, instancecfg.DefaultTagName)
 	}
 }
 

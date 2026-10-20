@@ -19,6 +19,7 @@ func PythonJob() *wizardv1.WizardDefinitionSpec {
 			{Name: "repoUrl", Required: true},
 			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}},
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
+			autoPromoteParam(),
 			{Name: "entrypoints", Type: wizardv1.ParameterObjectList, Required: true,
 				Description: "One entry per entrypoint file: key (filename), type (OnDemand or Cron), schedule (cron expression, Cron only, empty otherwise)"},
 			{Name: "externalAuthMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"},
@@ -26,7 +27,8 @@ func PythonJob() *wizardv1.WizardDefinitionSpec {
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
-				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}"}},
+				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}",
+				"autoPromote": "${params.autoPromote}", "tag": "${config.tagName}"}},
 			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
 			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
 				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",
@@ -87,12 +89,14 @@ func PythonService() *wizardv1.WizardDefinitionSpec {
 			{Name: "repoUrl", Required: true},
 			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}},
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
+			autoPromoteParam(),
 			{Name: "port", Type: wizardv1.ParameterNumber, Default: &apiextensionsv1.JSON{Raw: []byte(`8501`)}, Description: "Port the service listens on (Streamlit's default is 8501)"},
 			ingressNameParam(),
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
-				"name": "${params.serviceName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}"}},
+				"name": "${params.serviceName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}",
+				"autoPromote": "${params.autoPromote}", "tag": "${config.tagName}"}},
 			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
 			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
 				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",
@@ -101,6 +105,15 @@ func PythonService() *wizardv1.WizardDefinitionSpec {
 				"name": "${params.serviceName}", "type": "service", "artifactName": "${steps.build.outputs.artifactName}", "tag": "${steps.tag.outputs.tag}",
 				"port": "${params.port}", "ingressName": "${params.ingressName}"}},
 		},
+	}
+}
+
+// autoPromoteParam is the shared parameter of the Git definitions that has forge move the tag to
+// every later build of the repository (the watcher's auto-tag), so the app picks it up.
+func autoPromoteParam() wizardv1.WizardParameter {
+	return wizardv1.WizardParameter{
+		Name: "autoPromote", Type: wizardv1.ParameterBoolean, Default: &apiextensionsv1.JSON{Raw: []byte(`true`)},
+		Description: "Move the tag to every new version forge builds from the repository (false: move it by hand)",
 	}
 }
 
@@ -179,6 +192,7 @@ func BatchJob() *wizardv1.WizardDefinitionSpec {
 			{Name: "repoUrl", Required: true, Description: "Public HTTP(S) git URL"},
 			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}, Description: "Branch or tag to watch"},
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
+			autoPromoteParam(),
 			{Name: "triggerType", Default: &apiextensionsv1.JSON{Raw: []byte(`"OnDemand"`)}, Description: "OnDemand or Cron — the batch always starts once immediately either way"},
 			{Name: "schedule", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Cron schedule for future runs; only used when triggerType is Cron"},
 			{Name: "externalAuthMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"},
@@ -188,7 +202,8 @@ func BatchJob() *wizardv1.WizardDefinitionSpec {
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
-				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}"}},
+				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}",
+				"autoPromote": "${params.autoPromote}", "tag": "${config.tagName}"}},
 			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
 			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
 				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",
@@ -216,13 +231,15 @@ func BatchCronJob() *wizardv1.WizardDefinitionSpec {
 			{Name: "repoUrl", Required: true, Description: "Public HTTP(S) git URL"},
 			{Name: "repoRef", Default: &apiextensionsv1.JSON{Raw: []byte(`"main"`)}, Description: "Branch or tag to watch"},
 			{Name: "projectDir", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Relative path containing metadata.yaml (optional)"},
+			autoPromoteParam(),
 			{Name: "jobs", Required: true, Description: "YAML or JSON list of {cron, params} entries — validated by weave at creation time"},
 			{Name: "externalAuthMode", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: serviceAccount or oidc — inject a short-lived token into the job pods (set together with externalAuthName)"},
 			{Name: "externalAuthName", Default: &apiextensionsv1.JSON{Raw: []byte(`""`)}, Description: "Optional: allowlisted ServiceAccount name or OIDC secret name (see weave's external-auth options)"},
 		},
 		Steps: []wizardv1.WizardStep{
 			{Name: "watcher", Type: wizardv1.StepGitWatcher, Params: map[string]string{
-				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}"}},
+				"name": "${params.jobName}", "repoUrl": "${params.repoUrl}", "repoRef": "${params.repoRef}", "projectDir": "${params.projectDir}",
+				"autoPromote": "${params.autoPromote}", "tag": "${config.tagName}"}},
 			{Name: "build", Type: wizardv1.StepWaitBuild, Params: map[string]string{"watcher": "${steps.watcher.outputs.name}"}},
 			{Name: "tag", Type: wizardv1.StepTag, Params: map[string]string{
 				"artifactId": "${steps.build.outputs.artifactId}", "artifactName": "${steps.build.outputs.artifactName}",

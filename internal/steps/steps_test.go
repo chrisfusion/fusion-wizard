@@ -91,6 +91,49 @@ func TestGitWatcherCreateAdoptAndConflict(t *testing.T) {
 	}
 }
 
+func TestGitWatcherAutoPromote(t *testing.T) {
+	r := newRig(t)
+	withAutoPromote := func(name, value, tag string) map[string]string {
+		p := gwParams(name, repoURL)
+		p["autoPromote"], p["tag"] = value, tag
+		return p
+	}
+
+	// "true" passes the tag (default: the instance's tagName) to forge as the watcher's auto-tag.
+	r.mustDone(t, wizardv1.StepGitWatcher, "run-a", "watcher", withAutoPromote("defaulted", "true", ""))
+	r.mustDone(t, wizardv1.StepGitWatcher, "run-a", "watcher2", withAutoPromote("explicit", "true", "prod"))
+	r.mustDone(t, wizardv1.StepGitWatcher, "run-a", "watcher3", withAutoPromote("off", "false", "prod"))
+	for name, want := range map[string]string{"defaulted": r.env.Cfg.TagName, "explicit": "prod", "off": ""} {
+		if got := r.forge.Watchers[name].Spec.AutoTag; got != want {
+			t.Errorf("%s: autoTag = %q, want %q", name, got, want)
+		}
+	}
+	if r.env.Cfg.TagName == "" {
+		t.Fatal("rig has no default tagName")
+	}
+
+	// Off keeps the hash entries had before autoPromote existed.
+	if e := r.entry(t, wizardv1.ServiceForge, KindGitWatcher, "off"); e.Spec.SpecHash != ledger.Hash(KindGitWatcher, repoURL, "", "") {
+		t.Errorf("autoPromote=false changed the hash: %s", e.Spec.SpecHash)
+	}
+
+	// A different auto-tag on an existing watcher is a conflict, whoever made it.
+	_, err := r.ensure(t, wizardv1.StepGitWatcher, "run-b", "watcher", withAutoPromote("off", "true", "prod"))
+	if !IsPermanent(err) || !strings.Contains(err.Error(), "auto-tag") {
+		t.Errorf("wizard-made watcher: err = %v", err)
+	}
+	r.forge.Watchers["hand-made"] = &upstream.GitWatcher{Name: "hand-made", Spec: upstream.GitWatcherSpec{RepoURL: repoURL, BuildType: "app", AutoTag: "stable"}}
+	if _, err := r.ensure(t, wizardv1.StepGitWatcher, "run-b", "watcher", gwParams("hand-made", repoURL)); !IsPermanent(err) || !strings.Contains(err.Error(), "auto-tag") {
+		t.Errorf("hand-made watcher: err = %v", err)
+	}
+
+	// The same setting adopts.
+	r.mustDone(t, wizardv1.StepGitWatcher, "run-b", "watcher", withAutoPromote("explicit", "true", "prod"))
+	if e := r.entry(t, wizardv1.ServiceForge, KindGitWatcher, "explicit"); len(e.Spec.Refs) != 2 {
+		t.Errorf("explicit: refs = %d, want 2", len(e.Spec.Refs))
+	}
+}
+
 func TestFoundUnownedResourceIsNeverDeleted(t *testing.T) {
 	r := newRig(t)
 	r.forge.Watchers["hand-made"] = &upstream.GitWatcher{Name: "hand-made", Spec: upstream.GitWatcherSpec{RepoURL: repoURL, BuildType: "app"}}

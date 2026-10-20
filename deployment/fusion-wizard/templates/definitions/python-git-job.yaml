@@ -25,6 +25,10 @@ spec:
     - name: projectDir
       default: ""
       description: "Relative path containing metadata.yaml (optional)"
+    - name: autoPromote
+      type: boolean
+      default: true
+      description: "Move the tag to every new version forge builds from the repository (false: move it by hand)"
     - name: entrypoints
       type: objectList
       required: true
@@ -43,6 +47,8 @@ spec:
         repoUrl: "${params.repoUrl}"
         repoRef: "${params.repoRef}"
         projectDir: "${params.projectDir}"
+        autoPromote: "${params.autoPromote}"
+        tag: "${config.tagName}"
     - name: build
       type: waitBuild
       params:

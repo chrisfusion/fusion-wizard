@@ -18,6 +18,7 @@ type GitWatcherSpec struct {
 	RepoRef    string `json:"repoRef,omitempty"`
 	BuildType  string `json:"buildType"`
 	ProjectDir string `json:"projectDir,omitempty"`
+	AutoTag    string `json:"autoTag,omitempty"`
 }
 
 // GitWatcherStatus is the status part of a forge GitWatcher response.
@@ -49,6 +50,8 @@ type CreateGitWatcherRequest struct {
 	RepoRef    string `json:"repo_ref,omitempty"`
 	BuildType  string `json:"build_type"`
 	ProjectDir string `json:"project_dir,omitempty"`
+	// AutoTag makes forge (>= 0.11.0) move this index tag to every version the watcher builds.
+	AutoTag string `json:"auto_tag,omitempty"`
 
 	// Labels are stamped on the created GitWatcher's ObjectMeta, so a bare `kubectl get -o yaml`
 	// shows ownership without querying the wizard's own ledger API. Forge must be able to accept
