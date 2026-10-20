@@ -267,7 +267,7 @@ func ValidateAppParams(typ wizardv1.StepType, p map[string]string) error {
 		case (p["artifactName"] == "") != (p["tag"] == ""):
 			return permanentf("app needs artifactName and tag together, or neither (image only)")
 		case p["artifactName"] == "" && known("image"):
-			if err := ValidateImageParams(wizardv1.StepRun, map[string]string{"image": p["image"]}); err != nil {
+			if err := validateImmutableImage(p["image"]); err != nil {
 				return err
 			}
 		}
@@ -334,4 +334,46 @@ func ValidateAppParams(typ wizardv1.StepType, p map[string]string) error {
 		seen[e.name()] = e.Key
 	}
 	return nil
+}
+
+// validateImmutableImage requires the caller's image to be pinned: an explicit tag other than
+// "latest", or a digest. It is the same rule fusion-weave enforces on app images; the allowed
+// prefixes stay weave's deploy-time setting.
+func validateImmutableImage(image string) error {
+	switch {
+	case image == "" || strings.ContainsAny(image, " \t\n"):
+		return permanentf("image %q is empty or contains whitespace", image)
+	case !hasImmutableRef(image):
+		return permanentf("image %q must have an explicit tag (not \":latest\") or a digest", image)
+	}
+	return nil
+}
+
+// hasImmutableRef mirrors fusion-weave's internal/imagepolicy: a digest, or a tag other than latest.
+func hasImmutableRef(image string) bool {
+	if strings.Contains(image, "@sha256:") {
+		return true
+	}
+	// The tag follows the last ":" after the last "/" (an earlier ":" is a registry host:port).
+	name := image[strings.LastIndex(image, "/")+1:]
+	i := strings.LastIndex(name, ":")
+	if i < 0 {
+		return false
+	}
+	tag := name[i+1:]
+	return tag != "" && tag != "latest"
+}
+
+// ValidatesEarly reports whether the API can validate this param of a step at run creation
+// (ValidateExternalAuthParams / ValidateAppParams), when it resolves from run parameters alone.
+func ValidatesEarly(typ wizardv1.StepType, key string) bool {
+	switch typ {
+	case wizardv1.StepChain:
+		return strings.HasPrefix(key, "externalAuth")
+	case wizardv1.StepTrigger:
+		return strings.HasPrefix(key, "externalAuth")
+	case wizardv1.StepApp:
+		return key != "name"
+	}
+	return false
 }

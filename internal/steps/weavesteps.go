@@ -313,7 +313,7 @@ type triggerStep struct{}
 func (triggerStep) Type() wizardv1.StepType { return wizardv1.StepTrigger }
 func (triggerStep) Outputs() []string       { return []string{"name"} }
 func (triggerStep) Params() ParamSpec {
-	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule", "fireOnCreate", "externalAuthOverrideMode", "externalAuthOverrideName", "image", "imagePullPolicy", "stepName"}, Prefixes: []string{overridePrefix}}
+	return ParamSpec{Required: []string{"name", "chain"}, Optional: []string{"type", "schedule", "fireOnCreate", "externalAuthOverrideMode", "externalAuthOverrideName"}, Prefixes: []string{overridePrefix}}
 }
 
 // Ensure creates a WeaveTrigger (OnDemand or Cron) for the chain. Params prefixed "override."
@@ -327,11 +327,6 @@ func (triggerStep) Params() ParamSpec {
 //
 // externalAuthOverrideMode/externalAuthOverrideName (both or neither) set the trigger's
 // externalAuthRefOverride, which takes precedence over the chain's externalAuthRef.
-//
-// image (with optional imagePullPolicy and stepName, default the chain's step name) sets the
-// trigger's imageOverrides: weave copies it into every run the trigger creates, so a shared image-only
-// job template can run a caller-supplied image. Job steps only (a trigger cannot make a Deployment
-// run-owned). Weave checks the tag rule and the allowed prefixes.
 func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, error) {
 	name, chain := in.Params["name"], in.Params["chain"]
 	typ := firstNonEmpty(in.Params["type"], "OnDemand")
@@ -359,23 +354,8 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 		return Result{}, err
 	}
 
-	if err := ValidateImageParams(wizardv1.StepTrigger, in.Params); err != nil {
-		return Result{}, err
-	}
-	image, pullPolicy := in.Params["image"], in.Params["imagePullPolicy"]
-	imageStep := firstNonEmpty(in.Params["stepName"], env.Cfg.ChainStepName)
-
 	spec := map[string]any{"chainRef": map[string]any{"name": chain}, "type": typ}
 	hashParts := []string{KindTrigger, chain, typ, schedule}
-	if image != "" {
-		override := map[string]any{"stepName": imageStep, "image": image}
-		if pullPolicy != "" {
-			override["imagePullPolicy"] = pullPolicy
-		}
-		spec["imageOverrides"] = []any{override}
-		// Only set when used, so triggers written before image overrides existed keep their hash.
-		hashParts = append(hashParts, "image", imageStep, image, pullPolicy)
-	}
 	if authRef != nil {
 		spec["externalAuthRefOverride"] = authRef
 	}
@@ -408,29 +388,9 @@ func (triggerStep) Ensure(ctx context.Context, env *Env, in Input) (Result, erro
 				return "it has different parameter overrides"
 			case existingAuthKey(existing, "externalAuthRefOverride") != authRefKey(authRef):
 				return "it has a different externalAuthRefOverride"
-			case existingImageKey(existing) != imageKey(imageStep, image, pullPolicy):
-				return "it has different image overrides"
 			}
 			return ""
 		}, afterCreate, map[string]string{"name": name})
-}
-
-// imageKey is the comparable identity of a trigger's image override ("" when none is wanted).
-func imageKey(stepName, image, pullPolicy string) string {
-	if image == "" {
-		return ""
-	}
-	return stepName + "\x00" + image + "\x00" + pullPolicy
-}
-
-// existingImageKey reads the first imageOverrides entry of a weave-returned trigger spec in the
-// same form as imageKey.
-func existingImageKey(spec map[string]any) string {
-	list, _ := nested(spec, "imageOverrides").([]any)
-	if len(list) == 0 {
-		return ""
-	}
-	return imageKey(firstEntryString(list, "stepName"), firstEntryString(list, "image"), firstEntryString(list, "imagePullPolicy"))
 }
 
 // externalAuthFromParams reads an optional weave externalAuthRef from two step params. Both empty

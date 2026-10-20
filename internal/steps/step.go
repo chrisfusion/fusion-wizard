@@ -26,7 +26,6 @@ const (
 	KindArtifact        = "artifact"
 	KindTag             = "tag"
 	KindApp             = "app"
-	KindRun             = "run"
 	KindJobTemplate     = "jobtemplate"
 	KindServiceTemplate = "servicetemplate"
 	KindChain           = "chain"

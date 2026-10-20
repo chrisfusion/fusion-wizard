@@ -134,7 +134,6 @@ spec:
                       - jobTemplate
                       - serviceTemplate
                       - chain
-                      - run
                       - trigger
                       - batchTrigger
                       type: string
