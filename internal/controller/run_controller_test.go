@@ -575,112 +575,146 @@ func TestTwoRunsShareResourcesAndRollBackIndependently(t *testing.T) {
 	}
 }
 
-// TestImageServicesShareTemplateAndChainWithOneRunEach proves the image-service definition end to
-// end through the reconciler: n images cost one template, one chain and n weave runs, and each
-// wizard run rolls back only its own weave run.
-func TestImageServicesShareTemplateAndChainWithOneRunEach(t *testing.T) {
+// createStringRun creates a run with plain string parameters and reconciles it once.
+func (h *harness) createStringRun(name, def string, params map[string]string) {
+	h.t.Helper()
+	p := map[string]apiextensionsv1.JSON{}
+	for k, v := range params {
+		p[k] = js(`"` + v + `"`)
+	}
+	run := &wizardv1.WizardRun{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Spec:       wizardv1.WizardRunSpec{DefinitionRef: corev1.LocalObjectReference{Name: def}, DesiredState: wizardv1.DesiredApplied, Parameters: p},
+	}
+	if err := h.c.Create(context.Background(), run); err != nil {
+		h.t.Fatal(err)
+	}
+	h.reconcile(name)
+	if got := h.mustRun(name); got.Status.Phase != wizardv1.RunReady {
+		h.t.Fatalf("%s: phase=%s message=%q", name, got.Status.Phase, got.Status.Message)
+	}
+}
+
+// rollBack deletes a wizard run and lets the reconciler undo it.
+func (h *harness) rollBack(name string) {
+	h.t.Helper()
+	if err := h.c.Delete(context.Background(), h.mustRun(name)); err != nil {
+		h.t.Fatal(err)
+	}
+	h.reconcile(name)
+}
+
+// TestImageServicesAreOneAppEach proves the image-service definition end to end through the
+// reconciler: every service is a single WeaveApp, and each wizard run rolls back only its own.
+func TestImageServicesAreOneAppEach(t *testing.T) {
 	h := newHarness(t)
 	h.createDefinition("image-service", *stepstest.ImageService())
-	create := func(name, svc, image string) {
-		t.Helper()
-		run := &wizardv1.WizardRun{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec: wizardv1.WizardRunSpec{
-				DefinitionRef: corev1.LocalObjectReference{Name: "image-service"}, DesiredState: wizardv1.DesiredApplied,
-				Parameters: map[string]apiextensionsv1.JSON{
-					"baseName": js(`"base"`), "serviceName": js(`"` + svc + `"`), "image": js(`"` + image + `"`), "ingressName": js(`"` + svc + `"`)},
-			},
-		}
-		if err := h.c.Create(context.Background(), run); err != nil {
-			t.Fatal(err)
-		}
-		h.reconcile(name)
-		if got := h.mustRun(name); got.Status.Phase != wizardv1.RunReady {
-			t.Fatalf("%s: phase=%s message=%q", name, got.Status.Phase, got.Status.Message)
-		}
-	}
-	create("run-a", "cust-a", "registry.example/a/app:1.4.2")
-	create("run-b", "cust-b", "registry.example/b/app:2.0.0")
+	h.createStringRun("run-a", "image-service", map[string]string{"serviceName": "cust-a", "image": "registry.example/a/app:1.4.2", "ingressName": "cust-a"})
+	h.createStringRun("run-b", "image-service", map[string]string{"serviceName": "cust-b", "image": "registry.example/b/app:2.0.0"})
 
-	if h.log.Count("create weave/servicetemplates/") != 1 || h.log.Count("create weave/chains/") != 1 || h.log.Count("create weave/runs/") != 2 {
-		t.Errorf("want 1 template, 1 chain, 2 runs: %v", h.log.Snapshot())
+	if h.log.Count("create weave/apps/") != 2 || len(h.weave.Objs) != 2 {
+		t.Errorf("want exactly two apps and nothing else: %v", h.log.Snapshot())
 	}
-	if s := stepOf(h.mustRun("run-b"), "chain"); s.Resources[0].Disposition != wizardv1.DispositionAdopted {
-		t.Errorf("run-b must adopt the shared chain, got %s", s.Resources[0].Disposition)
+	spec := h.weave.Objs["apps/cust-a"]["spec"].(map[string]any)
+	if spec["type"] != "service" || spec["image"] != "registry.example/a/app:1.4.2" || spec["service"].(map[string]any)["ingressName"] != "cust-a" {
+		t.Errorf("app spec = %v", spec)
 	}
 	if h.log.Count("fire ") != 0 {
-		t.Errorf("services deploy through their run, nothing may be fired: %v", h.log.Snapshot())
+		t.Errorf("a service deploys itself, nothing may be fired: %v", h.log.Snapshot())
 	}
 
-	if err := h.c.Delete(context.Background(), h.mustRun("run-a")); err != nil {
-		t.Fatal(err)
+	h.rollBack("run-a")
+	if h.weave.Has("apps", "cust-a") || !h.weave.Has("apps", "cust-b") {
+		t.Errorf("rolling back run-a must only delete its own app: %v", h.log.Snapshot())
 	}
-	h.reconcile("run-a")
-	if h.weave.Has("runs", "cust-a") || !h.weave.Has("runs", "cust-b") || !h.weave.Has("chains", "base") || !h.weave.Has("servicetemplates", "base") {
-		t.Errorf("rolling back run-a must only delete its own weave run: %v", h.log.Snapshot())
-	}
-	if err := h.c.Delete(context.Background(), h.mustRun("run-b")); err != nil {
-		t.Fatal(err)
-	}
-	h.reconcile("run-b")
+	h.rollBack("run-b")
 	if len(h.weave.Objs) != 0 || h.ledgerSize() != 0 {
 		t.Errorf("the last run must clean up everything: weave=%d ledger=%d", len(h.weave.Objs), h.ledgerSize())
 	}
 }
 
-// TestImageJobsShareTemplateAndChain proves image-job and image-cron-job end to end through the
-// reconciler: one-shot jobs add a weave run each, cron jobs add a trigger each, and both share the
-// image-only job template and chain per baseName.
-func TestImageJobsShareTemplateAndChain(t *testing.T) {
+// TestImageJobsAreOneAppEach proves image-job and image-cron-job end to end: a one-shot job app is
+// launched once through the fire annotation, a cron job app only carries its schedule.
+func TestImageJobsAreOneAppEach(t *testing.T) {
 	h := newHarness(t)
 	h.createDefinition("image-job", *stepstest.ImageJob())
 	h.createDefinition("image-cron-job", *stepstest.ImageCronJob())
-	create := func(name, def string, params map[string]string) {
-		t.Helper()
-		p := map[string]apiextensionsv1.JSON{}
-		for k, v := range params {
-			p[k] = js(`"` + v + `"`)
-		}
-		run := &wizardv1.WizardRun{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec:       wizardv1.WizardRunSpec{DefinitionRef: corev1.LocalObjectReference{Name: def}, DesiredState: wizardv1.DesiredApplied, Parameters: p},
-		}
-		if err := h.c.Create(context.Background(), run); err != nil {
-			t.Fatal(err)
-		}
-		h.reconcile(name)
-		if got := h.mustRun(name); got.Status.Phase != wizardv1.RunReady {
-			t.Fatalf("%s: phase=%s message=%q", name, got.Status.Phase, got.Status.Message)
-		}
-	}
-	create("run-a", "image-job", map[string]string{"baseName": "base", "jobName": "once", "image": "registry.example/a/job:1"})
-	create("run-b", "image-cron-job", map[string]string{"baseName": "base", "jobName": "nightly", "image": "registry.example/b/job:2", "schedule": "0 9 * * *"})
+	h.createStringRun("run-a", "image-job", map[string]string{"jobName": "once", "image": "registry.example/a/job:1"})
+	h.createStringRun("run-b", "image-cron-job", map[string]string{"jobName": "nightly", "image": "registry.example/b/job:2", "schedule": "0 0 9 * * *"})
 
-	if h.log.Count("create weave/jobtemplates/") != 1 || h.log.Count("create weave/chains/") != 1 {
-		t.Errorf("template and chain must be shared: %v", h.log.Snapshot())
+	if h.log.Count("create weave/apps/") != 2 || len(h.weave.Objs) != 2 {
+		t.Errorf("want exactly two apps and nothing else: %v", h.log.Snapshot())
 	}
-	if _, has := h.weave.Objs["runs/once"]["spec"].(map[string]any)["stepOverrides"]; has {
-		t.Error("a one-shot job run must not carry stepOverrides")
+	once := h.weave.Objs["apps/once"]
+	if once["metadata"].(map[string]any)["annotations"].(map[string]any)["fusion-platform.io/fire"] != "main" {
+		t.Errorf("the one-shot job must be fired on creation: %v", once["metadata"])
 	}
-	trig := h.weave.Objs["triggers/nightly"]["spec"].(map[string]any)
-	if trig["type"] != "Cron" || trig["imageOverrides"].([]any)[0].(map[string]any)["image"] != "registry.example/b/job:2" {
-		t.Errorf("cron trigger = %v", trig)
+	nightly := h.weave.Objs["apps/nightly"]
+	if _, has := nightly["metadata"].(map[string]any)["annotations"]; has {
+		t.Errorf("a cron job must not be fired: %v", nightly["metadata"])
+	}
+	if ep := nightly["spec"].(map[string]any)["entrypoints"].([]any)[0].(map[string]any); ep["schedule"] != "0 0 9 * * *" {
+		t.Errorf("cron entrypoint = %v", ep)
+	}
+
+	h.rollBack("run-a")
+	h.rollBack("run-b")
+	if len(h.weave.Objs) != 0 || h.ledgerSize() != 0 {
+		t.Errorf("rollback must clean up everything: weave=%d ledger=%d", len(h.weave.Objs), h.ledgerSize())
+	}
+}
+
+// TestPythonGitJobIsOneAppWithMixedEntrypoints proves the python-git-job definition end to end:
+// one objectList becomes the entrypoints of a single job app, OnDemand and Cron side by side.
+func TestPythonGitJobIsOneAppWithMixedEntrypoints(t *testing.T) {
+	h := newHarness(t)
+	h.createDefinition("python-job", *stepstest.PythonJob())
+	h.forgeHasBuilt()
+	h.createRunWithEntries("run-a", nightlyParams,
+		entrypointEntry{file: "main.py", typ: "OnDemand"},
+		entrypointEntry{file: "etl/report.py", typ: "Cron", schedule: "0 0 9 * * *"},
+	)
+	h.reconcile("run-a")
+	if run := h.mustRun("run-a"); run.Status.Phase != wizardv1.RunReady {
+		t.Fatalf("status = %+v", run.Status)
+	}
+
+	spec := h.weave.Objs["apps/nightly"]["spec"].(map[string]any)
+	if spec["type"] != "job" || spec["image"] != "registry.example/runner:1.0.0" || spec["codeSource"].(map[string]any)["artifactName"] != "app.nightly" {
+		t.Errorf("app spec = %v", spec)
+	}
+	eps := spec["entrypoints"].([]any)
+	main, report := eps[0].(map[string]any), eps[1].(map[string]any)
+	if main["name"] != "main" || report["name"] != "etl-report" || report["schedule"] != "0 0 9 * * *" {
+		t.Errorf("entrypoints = %v", eps)
+	}
+	if _, has := main["schedule"]; has {
+		t.Error("an OnDemand entrypoint must not carry a schedule")
+	}
+	// watcher, artifact, tag, app
+	if got := h.ledgerSize(); got != 4 {
+		t.Errorf("ledger entries = %d, want 4", got)
+	}
+	h.rollBack("run-a")
+	if len(h.weave.Objs) != 0 || h.ledgerSize() != 0 {
+		t.Errorf("rollback must clean up everything: weave=%d ledger=%d", len(h.weave.Objs), h.ledgerSize())
+	}
+}
+
+// TestPythonGitServiceIsOneApp proves python-git-service: one service app on the built artifact.
+func TestPythonGitServiceIsOneApp(t *testing.T) {
+	h := newHarness(t)
+	h.createDefinition("python-service", *stepstest.PythonService())
+	h.forgeHasBuilt()
+	h.createStringRun("run-a", "python-service", map[string]string{"serviceName": "nightly", "repoUrl": repoURL, "ingressName": "nightly"})
+
+	spec := h.weave.Objs["apps/nightly"]["spec"].(map[string]any)
+	svc := spec["service"].(map[string]any)
+	if spec["type"] != "service" || svc["ingressName"] != "nightly" || svc["ports"].([]any)[0].(map[string]any)["port"] != 8501 {
+		t.Errorf("app spec = %v", spec)
 	}
 	if h.log.Count("fire ") != 0 {
 		t.Errorf("nothing may be fired: %v", h.log.Snapshot())
-	}
-
-	for _, n := range []string{"run-a", "run-b"} {
-		if err := h.c.Delete(context.Background(), h.mustRun(n)); err != nil {
-			t.Fatal(err)
-		}
-		h.reconcile(n)
-		if n == "run-a" && (h.weave.Has("runs", "once") || !h.weave.Has("triggers", "nightly") || !h.weave.Has("chains", "base") || !h.weave.Has("jobtemplates", "base")) {
-			t.Errorf("rolling back run-a must only delete its own weave run: %v", h.log.Snapshot())
-		}
-	}
-	if len(h.weave.Objs) != 0 || h.ledgerSize() != 0 {
-		t.Errorf("the last run must clean up everything: weave=%d ledger=%d", len(h.weave.Objs), h.ledgerSize())
 	}
 }
 

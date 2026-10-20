@@ -19,6 +19,7 @@ const (
 	WeaveChains           = "chains"
 	WeaveTriggers         = "triggers"
 	WeaveRuns             = "runs"
+	WeaveApps             = "apps"
 	weaveBatchTriggers    = "batchtriggers"
 )
 

@@ -6,6 +6,7 @@
 package params
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -227,8 +228,15 @@ func stringify(r Ref, v any) (string, error) {
 		return strconv.FormatFloat(x, 'f', -1, 64), nil
 	case bool:
 		return strconv.FormatBool(x), nil
+	case []map[string]string:
+		// An objectList renders as its JSON text, for steps that take the whole list (app entrypoints).
+		b, err := json.Marshal(x)
+		if err != nil {
+			return "", fmt.Errorf("cannot render ${%s}: %w", r.Raw, err)
+		}
+		return string(b), nil
 	case []string:
-		return "", fmt.Errorf("cannot render ${%s}: list parameters can only be used as forEach", r.Raw)
+		return "", fmt.Errorf("cannot render ${%s}: a stringList can only be used as forEach", r.Raw)
 	}
 	return "", fmt.Errorf("cannot render ${%s}: unsupported value type %T", r.Raw, v)
 }

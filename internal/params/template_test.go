@@ -40,8 +40,8 @@ func TestStem(t *testing.T) {
 		"dir.v1/run.py": "dir.v1/run",
 	}
 	for in, want := range cases {
-		if got := stem(in); got != want {
-			t.Errorf("stem(%q) = %q, want %q", in, got, want)
+		if got := Stem(in); got != want {
+			t.Errorf("Stem(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -76,6 +76,14 @@ func TestResolve(t *testing.T) {
 		if got != c.want {
 			t.Errorf("Resolve(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestResolveObjectListAsJSON(t *testing.T) {
+	ctx := Context{Params: map[string]any{"eps": []map[string]string{{"key": "a.py", "type": "OnDemand"}}}}
+	got, err := Resolve("${params.eps}", ctx)
+	if err != nil || got != `[{"key":"a.py","type":"OnDemand"}]` {
+		t.Errorf("Resolve = %q, %v", got, err)
 	}
 }
 

@@ -156,13 +156,15 @@ func hasImmutableRef(image string) bool {
 }
 
 // ValidatesEarly reports whether the API can validate this param of a step at run creation
-// (ValidateExternalAuthParams / ValidateImageParams), when it resolves from run parameters alone.
+// (ValidateExternalAuthParams / ValidateImageParams / ValidateAppParams), when it resolves from run parameters alone.
 func ValidatesEarly(typ wizardv1.StepType, key string) bool {
 	switch typ {
 	case wizardv1.StepChain:
 		return strings.HasPrefix(key, "externalAuth")
 	case wizardv1.StepTrigger:
 		return strings.HasPrefix(key, "externalAuth") || key == "image" || key == "imagePullPolicy"
+	case wizardv1.StepApp:
+		return key != "name"
 	case wizardv1.StepRun:
 		return key == "image" || key == "imagePullPolicy" || key == "stepKind" || key == "ingressName"
 	}

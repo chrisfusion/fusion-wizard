@@ -24,6 +24,7 @@ var catalogueOrder = []wizardv1.StepType{
 	wizardv1.StepGitWatcher,
 	wizardv1.StepWaitBuild,
 	wizardv1.StepTag,
+	wizardv1.StepApp,
 	wizardv1.StepJobTemplate,
 	wizardv1.StepServiceTemplate,
 	wizardv1.StepChain,
@@ -34,7 +35,7 @@ var catalogueOrder = []wizardv1.StepType{
 
 var registry = func() map[wizardv1.StepType]Step {
 	m := map[wizardv1.StepType]Step{}
-	for _, s := range []Step{gitWatcherStep{}, waitBuildStep{}, tagStep{}, jobTemplateStep{}, serviceTemplateStep{}, chainStep{}, runStep{}, triggerStep{}, batchTriggerStep{}} {
+	for _, s := range []Step{gitWatcherStep{}, waitBuildStep{}, tagStep{}, appStep{}, jobTemplateStep{}, serviceTemplateStep{}, chainStep{}, runStep{}, triggerStep{}, batchTriggerStep{}} {
 		m[s.Type()] = s
 	}
 	return m
@@ -191,8 +192,10 @@ func checkRefs(value, where string, inForEach bool, declared map[string]wizardv1
 			switch {
 			case !ok:
 				fail("%s refers to undeclared parameter %q", where, r.Name)
-			case p.Type == wizardv1.ParameterStringList || p.Type == wizardv1.ParameterObjectList:
+			case p.Type == wizardv1.ParameterStringList:
 				fail("%s: list parameter %q can only be used as forEach", where, r.Name)
+			case p.Type == wizardv1.ParameterObjectList && len(r.Filters) > 0:
+				fail("%s: objectList parameter %q renders as JSON and takes no filters", where, r.Name)
 			}
 		case params.RefConfig:
 			if _, ok := configKeys[r.Name]; !ok {

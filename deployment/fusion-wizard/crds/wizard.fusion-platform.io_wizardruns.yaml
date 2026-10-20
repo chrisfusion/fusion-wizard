@@ -179,6 +179,7 @@ spec:
                           - gitWatcher
                           - waitBuild
                           - tag
+                          - app
                           - jobTemplate
                           - serviceTemplate
                           - chain
@@ -406,6 +407,7 @@ spec:
                       - gitWatcher
                       - waitBuild
                       - tag
+                      - app
                       - jobTemplate
                       - serviceTemplate
                       - chain

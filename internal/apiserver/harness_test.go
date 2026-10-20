@@ -126,7 +126,7 @@ func (h *harness) seedDefinition(name string, spec *wizardv1.WizardDefinitionSpe
 }
 
 // seedPythonJob creates the reference definition under the name "python-job".
-func (h *harness) seedPythonJob() { h.seedDefinition("python-job", stepstest.PythonJob()) }
+func (h *harness) seedPythonJob() { h.seedDefinition("python-job", stepstest.TriggerJob()) }
 
 // seedImageService creates the reference image-service definition under its own name.
 func (h *harness) seedImageService() { h.seedDefinition("image-service", stepstest.ImageService()) }
@@ -177,10 +177,10 @@ func (h *harness) seedRun(name, definition string, mutate func(*wizardv1.WizardR
 
 // newGoodDefinition and newBrokenDefinition return the reference definition and a copy with a
 // typo'd step param, which ValidateDefinition rejects.
-func newGoodDefinition() *wizardv1.WizardDefinitionSpec { return stepstest.PythonJob() }
+func newGoodDefinition() *wizardv1.WizardDefinitionSpec { return stepstest.TriggerJob() }
 
 func newBrokenDefinition() *wizardv1.WizardDefinitionSpec {
-	d := stepstest.PythonJob()
+	d := stepstest.TriggerJob()
 	d.Steps[0].Params["repoUrll"] = "typo"
 	return d
 }

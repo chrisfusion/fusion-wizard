@@ -50,8 +50,8 @@ func TestCatalogueIsConsistent(t *testing.T) {
 
 func js(raw string) *apiextensionsv1.JSON { return &apiextensionsv1.JSON{Raw: []byte(raw)} }
 
-// pythonJob is the shared reference definition (see stepstest.PythonJob).
-func pythonJob() *wizardv1.WizardDefinitionSpec { return stepstest.PythonJob() }
+// pythonJob is the shared reference definition (see stepstest.TriggerJob).
+func pythonJob() *wizardv1.WizardDefinitionSpec { return stepstest.TriggerJob() }
 
 func TestValidateDefinitionAcceptsThePythonJobWizard(t *testing.T) {
 	if err := ValidateDefinition(pythonJob()); err != nil {
@@ -88,7 +88,11 @@ func TestValidateDefinitionRejects(t *testing.T) {
 		{"forEach on a scalar", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[5].ForEach = "${params.jobName}" }, "must be of type stringList"},
 		{"forEach undeclared", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[5].ForEach = "${params.zzz}" }, "undeclared parameter"},
 		{"forEach with text around", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[5].ForEach = "x${params.entrypoints}" }, "single ${params."},
-		{"list used as string", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[0].Params["repoRef"] = "${params.entrypoints}" }, "only be used as forEach"},
+		{"stringList used as string", func(d *wizardv1.WizardDefinitionSpec) {
+			d.Parameters = append(d.Parameters, wizardv1.WizardParameter{Name: "tags", Type: wizardv1.ParameterStringList})
+			d.Steps[0].Params["repoRef"] = "${params.tags}"
+		}, "only be used as forEach"},
+		{"objectList with a filter", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[0].Params["repoRef"] = "${params.entrypoints|lower}" }, "takes no filters"},
 		{"bad placeholder", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[0].Params["repoRef"] = "${params.x" }, "unterminated"},
 		{"unknown filter", func(d *wizardv1.WizardDefinitionSpec) { d.Steps[0].Params["repoRef"] = "${params.repoRef|shout}" }, "unknown filter"},
 		{"duplicate parameter", func(d *wizardv1.WizardDefinitionSpec) { d.Parameters = append(d.Parameters, d.Parameters[0]) }, "declared twice"},

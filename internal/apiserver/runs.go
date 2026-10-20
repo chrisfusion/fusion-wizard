@@ -392,12 +392,14 @@ func validateStepParams(instances []plan.Instance, values map[string]any) error 
 			declared++
 			if r, err := params.Resolve(v, pctx); err == nil {
 				resolved[k] = r
+			} else if in.Step.Type == wizardv1.StepApp {
+				resolved[k] = steps.Pending // the app checks what it can; see ValidateAppParams
 			}
 		}
 		if len(resolved) < declared {
 			continue // depends on a step output: only known once the step runs
 		}
-		for _, validate := range []func(wizardv1.StepType, map[string]string) error{steps.ValidateExternalAuthParams, steps.ValidateImageParams} {
+		for _, validate := range []func(wizardv1.StepType, map[string]string) error{steps.ValidateExternalAuthParams, steps.ValidateImageParams, steps.ValidateAppParams} {
 			if err := validate(in.Step.Type, resolved); err != nil {
 				errs = append(errs, fmt.Errorf("step %q: %w", in.Key, err))
 			}

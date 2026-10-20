@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"fusion-platform.io/fusion-wizard/internal/ledger"
+	"fusion-platform.io/fusion-wizard/internal/steps/stepstest"
 
 	wizardv1 "fusion-platform.io/fusion-wizard/api/v1alpha1"
 )
@@ -433,7 +434,7 @@ func TestCreateRunValidatesImageService(t *testing.T) {
 	h := newHarness(t)
 	h.seedImageService()
 	body := func(image string) map[string]any {
-		return map[string]any{"definition": "image-service", "parameters": map[string]any{"baseName": "base", "serviceName": "cust", "image": image}}
+		return map[string]any{"definition": "image-service", "parameters": map[string]any{"serviceName": "cust", "image": image}}
 	}
 
 	expect(t, h.do(http.MethodPost, "/api/v1/runs", body("registry.example/a/app:1.4.2")), http.StatusCreated)
@@ -454,11 +455,11 @@ func TestCreateRunValidatesImageJobs(t *testing.T) {
 	h := newHarness(t)
 	h.seedImageJobs()
 	job := func(image string) map[string]any {
-		return map[string]any{"definition": "image-job", "parameters": map[string]any{"baseName": "base", "jobName": "once", "image": image}}
+		return map[string]any{"definition": "image-job", "parameters": map[string]any{"jobName": "once", "image": image}}
 	}
 	cron := func(image string) map[string]any {
 		return map[string]any{"definition": "image-cron-job", "parameters": map[string]any{
-			"baseName": "base", "jobName": "nightly", "image": image, "schedule": "0 9 * * *"}}
+			"jobName": "nightly", "image": image, "schedule": "0 0 9 * * *"}}
 	}
 
 	expect(t, h.do(http.MethodPost, "/api/v1/runs", job("registry.example/a/job:1")), http.StatusCreated)
@@ -476,5 +477,37 @@ func TestCreateRunValidatesImageJobs(t *testing.T) {
 	}
 	if h.runCount() != 2 {
 		t.Errorf("a rejected image must not create a run, found %d", h.runCount())
+	}
+}
+
+func TestCreateRunValidatesAppEntrypointsBeforeTheBuild(t *testing.T) {
+	h := newHarness(t)
+	h.seedDefinition("python-git-job", stepstest.PythonJob())
+	run := func(entrypoints any, extra map[string]any) map[string]any {
+		p := map[string]any{"jobName": "nightly", "repoUrl": "https://git.example/team/nightly.git", "entrypoints": entrypoints}
+		for k, v := range extra {
+			p[k] = v
+		}
+		return map[string]any{"definition": "python-git-job", "parameters": p}
+	}
+	entry := func(typ, schedule string) []map[string]any {
+		return []map[string]any{{"key": "main.py", "type": typ, "schedule": schedule}}
+	}
+
+	expect(t, h.do(http.MethodPost, "/api/v1/runs", run(entry("Cron", "0 0 9 * * *"), nil)), http.StatusCreated)
+
+	for name, body := range map[string]map[string]any{
+		"cron without schedule": run(entry("Cron", ""), nil),
+		"unknown type":          run(entry("Weekly", ""), nil),
+		"half-set auth":         run(entry("OnDemand", ""), map[string]any{"externalAuthMode": "oidc"}),
+	} {
+		rec := h.do(http.MethodPost, "/api/v1/runs", body)
+		expect(t, rec, http.StatusUnprocessableEntity)
+		if e := decode[errResp](t, rec); e.Error == "" || len(e.Details) == 0 {
+			t.Errorf("%s: want details, got %+v", name, e)
+		}
+	}
+	if h.runCount() != 1 {
+		t.Errorf("a rejected app must not create a run, found %d", h.runCount())
 	}
 }

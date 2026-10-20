@@ -90,8 +90,8 @@ func newHarness(t *testing.T) *harness {
 
 func js(raw string) apiextensionsv1.JSON { return apiextensionsv1.JSON{Raw: []byte(raw)} }
 
-// pythonDefinition is the shared reference definition (see stepstest.PythonJob).
-func pythonDefinition() wizardv1.WizardDefinitionSpec { return *stepstest.PythonJob() }
+// pythonDefinition is the shared reference definition (see stepstest.TriggerJob).
+func pythonDefinition() wizardv1.WizardDefinitionSpec { return *stepstest.TriggerJob() }
 
 func (h *harness) createDefinition(name string, spec wizardv1.WizardDefinitionSpec) {
 	h.t.Helper()
