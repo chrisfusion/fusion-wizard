@@ -3,7 +3,7 @@
 # The operator and the API server ship in one image; the API deployment overrides the entrypoint.
 image:
   repository: fusion-wizard
-  tag: "0.2.0"
+  tag: "0.3.0"
   pullPolicy: IfNotPresent
 
 # ---- per-instance settings (rendered into the <release>-config ConfigMap) -----------------------

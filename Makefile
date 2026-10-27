@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 CONTROLLER_GEN ?= $(HOME)/go/bin/controller-gen
-IMG ?= fusion-wizard:0.2.0
+IMG ?= fusion-wizard:0.3.0
 NAMESPACE ?= fusion
 CHART_CRDS := deployment/fusion-wizard/crds
 
