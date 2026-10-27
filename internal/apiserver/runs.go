@@ -11,7 +11,10 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 
+	"github.com/chrisfusion/fusion-shared/listquery"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -63,10 +66,16 @@ func viewRun(run *wizardv1.WizardRun) runView {
 	if v.DesiredState == "" {
 		v.DesiredState = wizardv1.DesiredApplied
 	}
-	if v.Status.Phase == "" {
-		v.Status.Phase = wizardv1.RunPending // not reconciled yet
-	}
+	v.Status.Phase = runPhase(run)
 	return v
+}
+
+// runPhase is the run's phase; a run nobody reconciled yet reads as Pending.
+func runPhase(run *wizardv1.WizardRun) wizardv1.RunPhase {
+	if run.Status.Phase == "" {
+		return wizardv1.RunPending
+	}
+	return run.Status.Phase
 }
 
 // createRun validates everything the reconciler would validate later, so a client learns about all
@@ -142,45 +151,60 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, viewRun(run))
 }
 
+var runListSpec = listquery.Spec{
+	SortKeys:     []string{"created", "name", "phase", "definition"},
+	DefaultSort:  "-created", // newest first, ties by name
+	DefaultLimit: defaultListLimit,
+	MaxLimit:     maxListLimit,
+}
+
+// runFields reads WizardRuns for listquery: q searches the name, since/until apply to the
+// creation time, source=gitops finds runs Flux applied from a GitOps repo.
+var runFields = listquery.Fields[wizardv1.WizardRun]{
+	Name:   func(r *wizardv1.WizardRun) string { return r.Name },
+	Time:   func(r *wizardv1.WizardRun) time.Time { return r.CreationTimestamp.Time },
+	Labels: func(r *wizardv1.WizardRun) map[string]string { return r.Labels },
+	Sort: map[string]func(a, b *wizardv1.WizardRun) int{
+		"created": func(a, b *wizardv1.WizardRun) int {
+			return listquery.CompareTime(a.CreationTimestamp.Time, b.CreationTimestamp.Time)
+		},
+		"name":  func(a, b *wizardv1.WizardRun) int { return strings.Compare(a.Name, b.Name) },
+		"phase": func(a, b *wizardv1.WizardRun) int { return strings.Compare(string(runPhase(a)), string(runPhase(b))) },
+		"definition": func(a, b *wizardv1.WizardRun) int {
+			return strings.Compare(a.Spec.DefinitionRef.Name, b.Spec.DefinitionRef.Name)
+		},
+	},
+}
+
+// listRuns supports the shared list parameters (q, since, until, source, sort, limit,
+// continue) plus definition, phase (both repeatable or comma-separated) and createdBy.
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	limit := defaultListLimit
-	if raw := q.Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > maxListLimit {
-			writeError(w, http.StatusBadRequest, "limit must be a number between 1 and "+strconv.Itoa(maxListLimit))
-			return
-		}
-		limit = n
+	p, err := listquery.Parse(q, runListSpec, time.Now())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
+	definitions, phases, createdBy := listquery.Any(q, "definition"), listquery.Any(q, "phase"), q.Get("createdBy")
 
 	runs, err := s.listAllRuns(r.Context())
 	if err != nil {
 		internalError(w, r, err, "kind", "WizardRun")
 		return
 	}
-	definition, phase, createdBy := q.Get("definition"), q.Get("phase"), q.Get("createdBy")
-	items := make([]runView, 0, len(runs))
-	for i := range runs {
-		v := viewRun(&runs[i])
-		if (definition != "" && v.Definition != definition) ||
-			(phase != "" && string(v.Status.Phase) != phase) ||
-			(createdBy != "" && v.CreatedBy != createdBy) {
-			continue
-		}
-		items = append(items, v)
-	}
-	sort.Slice(items, func(i, j int) bool { // newest first
-		if !items[i].CreatedAt.Equal(&items[j].CreatedAt) {
-			return items[j].CreatedAt.Before(&items[i].CreatedAt)
-		}
-		return items[i].Name < items[j].Name
+	page := listquery.Apply(runs, p, runFields, func(run *wizardv1.WizardRun) bool {
+		return definitions.Match(run.Spec.DefinitionRef.Name) && phases.Match(string(runPhase(run))) &&
+			(createdBy == "" || run.Spec.CreatedBy == createdBy)
 	})
-	total := len(items)
-	if len(items) > limit {
-		items = items[:limit]
+	items := make([]runView, len(page.Items))
+	for i := range page.Items {
+		items[i] = viewRun(&page.Items[i])
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+	resp := map[string]any{"items": items, "total": page.Total}
+	if page.Continue != "" {
+		resp["continue"] = page.Continue
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {

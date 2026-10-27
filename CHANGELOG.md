@@ -5,6 +5,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- `GET /api/v1/runs` takes the shared list parameters of `fusion-shared/listquery` (same as fusion-weave's lists): `q` (name substring), `since`/`until` (creation time; RFC 3339 or `24h`/`7d`), `source` (`gitops` = WizardRuns Flux applied from a GitOps repo), `sort` (`created`, `name`, `phase`, `definition`; `-` = descending, default `-created`) and `continue` (the response carries `continue` while more pages follow). `definition` and `phase` now accept several values (repeated or comma-separated). Invalid `sort`/`since`/`until`/`source`/`continue` return `400`; existing calls are unchanged.
+
+### Changed
+- New dependency `github.com/chrisfusion/fusion-shared` (vendored).
+
 ## [0.2.0] — 2026-10-20
 
 ### Added

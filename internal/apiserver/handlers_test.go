@@ -225,6 +225,72 @@ func TestGetAndListRuns(t *testing.T) {
 	}
 }
 
+// TestListRunsQuery covers the shared listquery parameters (fusion-shared) on GET /runs.
+func TestListRunsQuery(t *testing.T) {
+	h := newHarness(t)
+	base := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	mk := func(name, def string, phase wizardv1.RunPhase, ageDays int, labels map[string]string) {
+		h.seedRun(name, def, func(r *wizardv1.WizardRun) {
+			r.Labels = labels
+			r.Status.Phase = phase
+			r.CreationTimestamp = metav1.NewTime(base.Add(time.Duration(ageDays) * 24 * time.Hour))
+		})
+	}
+	flux := map[string]string{"kustomize.toolkit.fluxcd.io/name": "tenant-apps"}
+	mk("etl-nightly", "python-job", wizardv1.RunReady, 1, flux)
+	mk("etl-adhoc", "python-job", wizardv1.RunFailed, 3, nil)
+	mk("report", "batch-job", wizardv1.RunRolledBack, 2, flux)
+	mk("dash", "streamlit", "", 4, nil)
+
+	type listResp struct {
+		Items []runView `json:"items"`
+		Total int       `json:"total"`
+		Next  string    `json:"continue"`
+	}
+	list := func(query string) listResp {
+		t.Helper()
+		rec := h.do(http.MethodGet, "/api/v1/runs"+query, nil)
+		expect(t, rec, http.StatusOK)
+		return decode[listResp](t, rec)
+	}
+	names := func(r listResp) string {
+		var out []string
+		for _, it := range r.Items {
+			out = append(out, it.Name)
+		}
+		return strings.Join(out, ",")
+	}
+	for query, want := range map[string]string{
+		"?q=ETL":                          "etl-adhoc,etl-nightly",
+		"?source=gitops":                  "report,etl-nightly",
+		"?phase=Failed,Pending":           "dash,etl-adhoc",
+		"?phase=Ready&phase=RolledBack":   "report,etl-nightly",
+		"?definition=batch-job,streamlit": "dash,report",
+		"?sort=name":                      "dash,etl-adhoc,etl-nightly,report",
+		"?sort=-phase":                    "report,etl-nightly,dash,etl-adhoc",
+		"?sort=definition":                "report,etl-adhoc,etl-nightly,dash",
+		"?since=2026-09-02T12:00:00Z":     "dash,etl-adhoc,report",
+		"?since=2026-09-02T12:00:00Z&until=2026-09-04T12:00:00Z": "etl-adhoc,report",
+	} {
+		if got := names(list(query)); got != want {
+			t.Errorf("GET /runs%s = %s, want %s", query, got, want)
+		}
+	}
+
+	first := list("?limit=3")
+	if names(first) != "dash,etl-adhoc,report" || first.Total != 4 || first.Next == "" {
+		t.Fatalf("page 1 = %s total %d next %q", names(first), first.Total, first.Next)
+	}
+	second := list("?limit=3&continue=" + first.Next)
+	if names(second) != "etl-nightly" || second.Next != "" {
+		t.Fatalf("page 2 = %s next %q", names(second), second.Next)
+	}
+
+	for _, bad := range []string{"?sort=size", "?since=yesterday", "?source=a%20b", "?continue=zzz"} {
+		expect(t, h.do(http.MethodGet, "/api/v1/runs"+bad, nil), http.StatusBadRequest)
+	}
+}
+
 // ---- retry / rollback / delete ----
 
 func TestRetryRun(t *testing.T) {
